@@ -26,6 +26,8 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
 		${PROJECT_SOURCES}
 		about.ui
 		about.h about.cpp about.ui
+		stb_image.h
+		datamanager.h datamanager.cpp
 
 
     )

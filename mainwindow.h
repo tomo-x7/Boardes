@@ -12,7 +12,7 @@ class MainWindow;
 }
 QT_END_NAMESPACE
 
-class Component;
+class PlacedComponent;
 
 class MainWindow : public QMainWindow
 {
@@ -29,6 +29,6 @@ private:
     Ui::MainWindow *ui;
     QGraphicsScene *frontScene;
     QGraphicsScene *backScene;
-    std::forward_list<Component *> dataList;
+    std::forward_list<PlacedComponent *> dataList;
 };
 #endif // MAINWINDOW_H

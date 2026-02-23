@@ -17,10 +17,9 @@ public:
                const QStyleOptionGraphicsItem *option,
                QWidget *widget = nullptr) override
     {
-        painter->setPen(QPen(this->color()));
+        painter->setPen(QPen());
         painter->drawRect(0, 0, 50, 10);
     }
-    virtual QColor color() = 0;
 };
 class FrontItem : public Item
 {
@@ -29,7 +28,6 @@ public:
         : Item()
     {}
     ~FrontItem() {}
-    QColor color() override { return Qt::blue; }
 };
 class BackItem : public Item
 {
@@ -38,13 +36,12 @@ public:
         : Item()
     {}
     ~BackItem() {}
-    QColor color() override { return Qt::red; }
 };
 
-class Component
+class PlacedComponent
 {
 public:
-    Component(QGraphicsScene *frontScene, QGraphicsScene *backScene)
+    PlacedComponent(QGraphicsScene *frontScene, QGraphicsScene *backScene)
         : front(new FrontItem())
         , back(new BackItem())
         , frontScene(frontScene)
@@ -53,7 +50,7 @@ public:
         frontScene->addItem(front);
         backScene->addItem(back);
     }
-    ~Component()
+    ~PlacedComponent()
     {
         frontScene->removeItem(front);
         backScene->removeItem(back);
@@ -80,7 +77,7 @@ MainWindow::MainWindow(QWidget *parent)
     backScene->setSceneRect(0, 0, 400, 300);
     frontScene->addRect(0, 0, 400, 300);
 
-    auto c1 = new Component(frontScene, backScene);
+    auto c1 = new PlacedComponent(frontScene, backScene);
     dataList.push_front(c1);
 
     ui->frontView->setScene(frontScene);
