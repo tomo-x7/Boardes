@@ -15,25 +15,28 @@
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QGridLayout" name="gridLayout" columnstretch="0,1" columnminimumwidth="200,0">
+    <item row="0" column="1">
+     <layout class="QGridLayout" name="gridLayout_2" rowstretch="0,1" rowminimumheight="30,0">
+      <property name="verticalSpacing">
+       <number>0</number>
+      </property>
+      <item row="1" column="0">
+       <layout class="QHBoxLayout" name="horizontalLayout_2">
+        <item>
+         <widget class="QGraphicsView" name="frontView"/>
+        </item>
+        <item>
+         <widget class="QGraphicsView" name="backView"/>
+        </item>
+       </layout>
+      </item>
+      <item row="0" column="0">
+       <layout class="QHBoxLayout" name="horizontalLayout_3"/>
+      </item>
+     </layout>
+    </item>
     <item row="0" column="0">
      <layout class="QGridLayout" name="ItemSelectorView"/>
-    </item>
-    <item row="0" column="1">
-     <widget class="QSplitter" name="splitter">
-      <property name="orientation">
-       <enum>Qt::Orientation::Horizontal</enum>
-      </property>
-      <widget class="QGraphicsView" name="frontView">
-       <property name="alignment">
-        <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignTop</set>
-       </property>
-      </widget>
-      <widget class="QGraphicsView" name="backView">
-       <property name="alignment">
-        <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignTop</set>
-       </property>
-      </widget>
-     </widget>
     </item>
    </layout>
   </widget>
@@ -56,7 +59,7 @@
     <property name="title">
      <string>ヘルプ</string>
     </property>
-    <addaction name="actionBoardes"/>
+    <addaction name="aboutAction"/>
    </widget>
    <addaction name="menu"/>
    <addaction name="menu_2"/>
@@ -79,7 +82,13 @@
    </attribute>
    <addaction name="createAction"/>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
+  <widget class="QStatusBar" name="statusbar">
+   <property name="styleSheet">
+    <string notr="true">QStatusBar{
+  border-top:1px solid black;
+}</string>
+   </property>
+  </widget>
   <action name="createAction">
    <property name="icon">
     <iconset theme="QIcon::ThemeIcon::DocumentNew"/>
@@ -88,7 +97,7 @@
     <string>新規作成</string>
    </property>
   </action>
-  <action name="actionBoardes">
+  <action name="aboutAction">
    <property name="text">
     <string>Boardesについて</string>
    </property>

@@ -1,100 +1,59 @@
 #include "mainwindow.h"
 
+#include <QCloseEvent>
 #include <QGraphicsItem>
+#include <QMessageBox>
+#include <QSettings>
 
 #include "./about.h"
 #include "./ui_mainwindow.h"
 
-class Item : public QGraphicsItem
-{
-public:
-    Item()
-        : QGraphicsItem()
-    {}
-    virtual ~Item() {}
-    QRectF boundingRect() const override { return QRectF(0, 0, 50, 10); }
-    void paint(QPainter *painter,
-               const QStyleOptionGraphicsItem *option,
-               QWidget *widget = nullptr) override
-    {
-        painter->setPen(QPen());
-        painter->drawRect(0, 0, 50, 10);
-    }
-};
-class FrontItem : public Item
-{
-public:
-    FrontItem()
-        : Item()
-    {}
-    ~FrontItem() {}
-};
-class BackItem : public Item
-{
-public:
-    BackItem()
-        : Item()
-    {}
-    ~BackItem() {}
-};
-
-class PlacedComponent
-{
-public:
-    PlacedComponent(QGraphicsScene *frontScene, QGraphicsScene *backScene)
-        : front(new FrontItem())
-        , back(new BackItem())
-        , frontScene(frontScene)
-        , backScene(backScene)
-    {
-        frontScene->addItem(front);
-        backScene->addItem(back);
-    }
-    ~PlacedComponent()
-    {
-        frontScene->removeItem(front);
-        backScene->removeItem(back);
-        delete front;
-        delete back;
-    }
-
-private:
-    FrontItem *front;
-    BackItem *back;
-    QGraphicsScene *frontScene;
-    QGraphicsScene *backScene;
-};
-
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
-    , ui(new Ui::MainWindow)
-    , frontScene(new QGraphicsScene(this))
-    , backScene(new QGraphicsScene(this))
-    , dataList()
+	: QMainWindow(parent)
+	, ui(new Ui::MainWindow)
+	, frontScene(new QGraphicsScene(this))
+	, backScene(new QGraphicsScene(this))
 {
     ui->setupUi(this);
-    frontScene->setSceneRect(0, 0, 400, 300);
-    backScene->setSceneRect(0, 0, 400, 300);
+
+	QSettings settings;
+	if (settings.contains("geometry")) {
+		restoreGeometry(settings.value("geometry").toByteArray());
+	} else {
+	}
+	restoreState(settings.value("myWidget/windowState").toByteArray());
+
+	frontScene->setSceneRect(0, 0, 400, 300);
+	backScene->setSceneRect(0, 0, 400, 300);
     frontScene->addRect(0, 0, 400, 300);
 
-    auto c1 = new PlacedComponent(frontScene, backScene);
-    dataList.push_front(c1);
+	// auto c1 = new PlacedComponent(frontScene, backScene);
+	// dataList.push_front(c1);
 
-    ui->frontView->setScene(frontScene);
-    ui->backView->setScene(backScene);
+	ui->frontView->setScene(frontScene);
+	ui->backView->setScene(backScene);
 }
 
 MainWindow::~MainWindow()
 {
-    delete ui;
-    for (auto item : dataList) {
-        delete item;
-    }
-    dataList.clear();
+	delete ui;
 }
 
-void MainWindow::on_actionBoardes_triggered()
+void MainWindow::on_aboutAction_triggered()
 {
     auto about = About();
     about.exec();
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+	auto reply = QMessageBox::question(this, "確認", "終了しますか？");
+	if (reply == QMessageBox::Yes) {
+		QSettings settings;
+		settings.setValue("geometry", saveGeometry());
+		settings.setValue("windowState", saveState());
+		QMainWindow::closeEvent(event);
+	} else {
+		event->ignore();
+	}
 }

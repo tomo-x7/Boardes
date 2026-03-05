@@ -1,10 +1,7 @@
-#ifndef MAINWINDOW_H
-#define MAINWINDOW_H
+#pragma once
 
 #include <QMainWindow>
 #include <QGraphicsScene>
-
-#include <forward_list>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -21,14 +18,13 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+	void closeEvent(QCloseEvent *event) override;
 
 private slots:
-    void on_actionBoardes_triggered();
+	void on_aboutAction_triggered();
 
 private:
     Ui::MainWindow *ui;
     QGraphicsScene *frontScene;
-    QGraphicsScene *backScene;
-    std::forward_list<PlacedComponent *> dataList;
+	QGraphicsScene *backScene;
 };
-#endif // MAINWINDOW_H

@@ -1,20 +1,13 @@
-#ifndef DATAMANAGER_H
-#define DATAMANAGER_H
+#pragma once
 
-class Component
-{
-public:
-    Component();
-    ~Component();
-};
+#include <QPixmap>
 
+// 一つのドキュメントを管理。セーブもここ。
 class DataManager
 {
 public:
     DataManager();
-    ~DataManager();
+	~DataManager();
 
 private:
 };
-
-#endif // DATAMANAGER_H
