@@ -116,7 +116,7 @@ jobs:
             --plugin qt \
             --appdir build/AppDir \
             --output appimage \
-            -e Boardes \
+            -e build/Boardes \
             --icon-file=testicon.png \
             --desktop-file=test.desktop
 
@@ -124,7 +124,7 @@ jobs:
       # 10. Rename AppImage
       # ---------------------------------------------------------------
       - name: Rename AppImage
-        run: mv Boardes-x86_64.AppImage "Boardes-${{ github.event.inputs.version }}-x86_64.AppImage"
+        run: mv build/Boardes-x86_64.AppImage "Boardes-${{ github.event.inputs.version }}-x86_64.AppImage"
 
       # ---------------------------------------------------------------
       # 11. Create draft release
