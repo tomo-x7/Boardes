@@ -1,0 +1,141 @@
+name: Build AppImage
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "リリースバージョン番号(v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      # ---------------------------------------------------------------
+      # 1. Checkout
+      # ---------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # ---------------------------------------------------------------
+      # 2. Install CMake 4.2.3 via Kitware APT repo
+      # ---------------------------------------------------------------
+      - name: Add Kitware APT repository
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates gpg wget
+          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null \
+            | gpg --dearmor - \
+            | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
+          echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main' \
+            | sudo tee /etc/apt/sources.list.d/kitware.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y kitware-archive-keyring
+
+      - name: Install CMake and Ninja
+        run: |
+          sudo apt-get install -y cmake=4.2.3* ninja-build
+          cmake --version
+
+      # ---------------------------------------------------------------
+      # 3. Install Qt 6.10.2
+      # ---------------------------------------------------------------
+      - name: Install Qt 6.10.2
+        uses: jurplel/install-qt-action@d325aaf2504a2620dd4434059b4fc3abcbf7b8b2 # v4.3.0
+        with:
+          version: "6.10.2"
+          host: linux
+          target: desktop
+          modules: "qtwayland"
+          cache: true
+
+      # ---------------------------------------------------------------
+      # 4. Install runtime dependencies
+      # ---------------------------------------------------------------
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get install -y \
+            libgl1-mesa-dev \
+            libglib2.0-dev \
+            libfuse2 \
+            libxkbcommon-dev \
+            libxcb-cursor0
+
+      # ---------------------------------------------------------------
+      # 5. Cache linuxdeploy binaries
+      # ---------------------------------------------------------------
+      - name: Cache linuxdeploy
+        id: cache-linuxdeploy
+        uses: actions/cache@b69b507ba7fc8170efdfa11cf5e9ba4cf3e47611 # v4.2.0
+        with:
+          path: |
+            linuxdeploy-x86_64.AppImage
+            linuxdeploy-plugin-qt-x86_64.AppImage
+          key: linuxdeploy-continuous-v1
+
+      - name: Download linuxdeploy
+        if: steps.cache-linuxdeploy.outputs.cache-hit != 'true'
+        run: |
+          wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+
+      - name: Make linuxdeploy executable
+        run: |
+          chmod +x linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-plugin-qt-x86_64.AppImage
+
+      # ---------------------------------------------------------------
+      # 6. Configure
+      # ---------------------------------------------------------------
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -GNinja
+
+      # ---------------------------------------------------------------
+      # 7. Build
+      # ---------------------------------------------------------------
+      - name: Build
+        run: cmake --build build
+
+      # ---------------------------------------------------------------
+      # 8. Install
+      # ---------------------------------------------------------------
+      - name: Install
+        run: cmake --install build --prefix build/AppDir
+
+      # ---------------------------------------------------------------
+      # 9. Create AppImage
+      # ---------------------------------------------------------------
+      - name: Create AppImage
+        run: |
+          export NO_STRIP=true
+          export EXTRA_QT_PLUGINS=waylandcompositor
+          export EXTRA_PLATFORM_PLUGINS="libqwayland.so"
+          ./linuxdeploy-x86_64.AppImage \
+            --plugin qt \
+            --appdir build/AppDir \
+            --output appimage \
+            -e Boardes \
+            --icon-file=testicon.png \
+            --desktop-file=test.desktop
+
+      # ---------------------------------------------------------------
+      # 10. Rename AppImage
+      # ---------------------------------------------------------------
+      - name: Rename AppImage
+        run: mv Boardes-x86_64.AppImage "Boardes-${{ github.event.inputs.version }}-x86_64.AppImage"
+
+      # ---------------------------------------------------------------
+      # 11. Create draft release
+      # ---------------------------------------------------------------
+      - name: Create draft release
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          draft: true
+          files: "Boardes-${{ github.event.inputs.version }}-x86_64.AppImage"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
