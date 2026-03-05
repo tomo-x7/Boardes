@@ -19,7 +19,7 @@ jobs:
       # 1. Checkout
       # ---------------------------------------------------------------
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       # ---------------------------------------------------------------
       # 2. Install CMake 4.2.3 via Kitware APT repo
@@ -45,7 +45,7 @@ jobs:
       # 3. Install Qt 6.10.2
       # ---------------------------------------------------------------
       - name: Install Qt 6.10.2
-        uses: jurplel/install-qt-action@d325aaf2504a2620dd4434059b4fc3abcbf7b8b2 # v4.3.0
+        uses: jurplel/install-qt-action@d325aaf2a8baeeda41ad0b5d39f84a6af9bcf005 # v4.3.0
         with:
           version: "6.10.2"
           host: linux
@@ -70,7 +70,7 @@ jobs:
       # ---------------------------------------------------------------
       - name: Cache linuxdeploy
         id: cache-linuxdeploy
-        uses: actions/cache@b69b507ba7fc8170efdfa11cf5e9ba4cf3e47611 # v4.2.0
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: |
             linuxdeploy-x86_64.AppImage
