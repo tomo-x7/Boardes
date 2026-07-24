@@ -1,7 +1,8 @@
 #pragma once
 
-#include <QMainWindow>
 #include <QGraphicsScene>
+#include <QMainWindow>
+#include "libmanager.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -23,8 +24,11 @@ public:
 private slots:
 	void on_aboutAction_triggered();
 
+	void on_itemSelectType_currentIndexChanged(int index);
+
 private:
-    Ui::MainWindow *ui;
+	Ui::MainWindow *ui;
     QGraphicsScene *frontScene;
 	QGraphicsScene *backScene;
+	LibManager libManager;
 };

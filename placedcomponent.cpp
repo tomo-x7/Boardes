@@ -2,12 +2,14 @@
 
 #include <QGraphicsItem>
 #include <QPainter>
+#include <QStyleOptionGraphicsItem>
 
 class Item : public QGraphicsItem
 {
 public:
-	Item()
+	Item(std::shared_ptr<Component> comp)
 		: QGraphicsItem()
+		, comp(comp)
 	{}
 	virtual ~Item() {}
 	QRectF boundingRect() const override { return QRectF(0, 0, 50, 10); }
@@ -15,15 +17,20 @@ public:
 			   const QStyleOptionGraphicsItem *option,
 			   QWidget *widget = nullptr) override
 	{
-		painter->setPen(QPen());
-		painter->drawRect(0, 0, 50, 10);
+		auto pixmap = comp->pixmap;
+		painter->drawPixmap(QPoint(10.0, 20.0), pixmap);
+		// painter->setPen(QPen());
+		// painter->drawRect(0, 0, 50, 10);
 	}
+
+private:
+	std::shared_ptr<Component> comp;
 };
 class FrontItem : public Item
 {
 public:
 	FrontItem(std::shared_ptr<Component> comp)
-		: Item()
+		: Item(comp)
 		, comp(comp)
 	{}
 	~FrontItem() {}
@@ -35,7 +42,7 @@ class BackItem : public Item
 {
 public:
 	BackItem(std::shared_ptr<Component> comp)
-		: Item()
+		: Item(comp)
 		, comp(comp)
 	{}
 	~BackItem() {}

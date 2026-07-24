@@ -3,6 +3,7 @@
 #include <QGraphicsScene>
 #include <QMainWindow>
 #include "libmanager.h"
+#include "util.h"
 
 class FrontItem;
 class BackItem;
@@ -16,6 +17,7 @@ public:
 					std::shared_ptr<Component> comp);
 	~PlacedComponent();
 
+	MOVEONLY(PlacedComponent)
 private:
 	FrontItem *front;
 	BackItem *back;
