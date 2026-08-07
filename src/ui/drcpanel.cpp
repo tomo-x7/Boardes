@@ -1,0 +1,99 @@
+#include "drcpanel.h"
+
+#include <QAbstractItemView>
+#include <QBrush>
+#include <QColor>
+#include <QHeaderView>
+#include <QLabel>
+#include <QPushButton>
+#include <QTreeWidget>
+#include <QVBoxLayout>
+
+namespace {
+
+QString severityText(DrcSeverity s) {
+	return s == DrcSeverity::Error ? QStringLiteral("エラー") : QStringLiteral("警告");
+}
+
+QColor severityColor(DrcSeverity s) {
+	return s == DrcSeverity::Error ? QColor(200, 40, 40) : QColor(180, 120, 0);
+}
+
+}  // namespace
+
+DrcPanel::DrcPanel(QWidget *parent) : QWidget(parent) {
+	m_summaryLabel = new QLabel(QStringLiteral("(ドキュメント未設定)"), this);
+
+	m_tree = new QTreeWidget(this);
+	m_tree->setColumnCount(2);
+	m_tree->setHeaderLabels({QStringLiteral("重要度"), QStringLiteral("内容")});
+	m_tree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+	m_tree->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+	m_tree->setRootIsDecorated(false);
+	m_tree->setUniformRowHeights(true);
+	m_tree->setSelectionMode(QAbstractItemView::SingleSelection);
+	m_tree->setAlternatingRowColors(true);
+
+	m_refreshButton = new QPushButton(QStringLiteral("再検査"), this);
+	connect(m_refreshButton, &QPushButton::clicked, this, &DrcPanel::refresh);
+
+	auto *layout = new QVBoxLayout(this);
+	layout->setContentsMargins(4, 4, 4, 4);
+	layout->addWidget(m_summaryLabel);
+	layout->addWidget(m_tree, /*stretch=*/1);
+	layout->addWidget(m_refreshButton);
+
+	connect(m_tree, &QTreeWidget::itemClicked, this, &DrcPanel::onItemClicked);
+}
+
+void DrcPanel::setContext(Document *document, LibraryManager *libraryManager) {
+	m_document = document;
+	m_libraryManager = libraryManager;
+	refresh();
+}
+
+void DrcPanel::refresh() {
+	m_tree->clear();
+	m_findings.clear();
+
+	if (!m_document || !m_libraryManager) {
+		m_summaryLabel->setText(QStringLiteral("(ドキュメント未設定)"));
+		return;
+	}
+
+	// 基板規模的に毎回全件走査で十分高速なので、増分計算はせずまるごと再計算する。
+	m_findings = m_engine.run(*m_document, m_libraryManager);
+
+	int errorCount = 0;
+	int warningCount = 0;
+	for (int i = 0; i < m_findings.size(); ++i) {
+		const DrcFinding &f = m_findings[i];
+		if (f.severity == DrcSeverity::Error) {
+			++errorCount;
+		} else {
+			++warningCount;
+		}
+		auto *item = new QTreeWidgetItem(m_tree);
+		item->setText(0, severityText(f.severity));
+		item->setForeground(0, QBrush(severityColor(f.severity)));
+		item->setText(1, f.message);
+		item->setData(0, Qt::UserRole, i);  // m_findings 内のインデックスを持たせておく (コンストラクタで m_tree に自動追加済み)
+	}
+
+	if (m_findings.isEmpty()) {
+		m_summaryLabel->setText(QStringLiteral("問題は見つかりませんでした。"));
+	} else {
+		m_summaryLabel->setText(QStringLiteral("エラー %1件 / 警告 %2件").arg(errorCount).arg(warningCount));
+	}
+}
+
+void DrcPanel::onItemClicked(QTreeWidgetItem *item, int /*column*/) {
+	if (!item) {
+		return;
+	}
+	const int idx = item->data(0, Qt::UserRole).toInt();
+	if (idx < 0 || idx >= m_findings.size()) {
+		return;
+	}
+	emit findingActivated(m_findings[idx]);
+}

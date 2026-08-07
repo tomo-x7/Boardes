@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>About</class>
+ <widget class="QDialog" name="About">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>656</width>
+    <height>400</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Boardesについて</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QTextBrowser" name="licenseBrowser">
+     <property name="openExternalLinks">
+      <bool>true</bool>
+     </property>
+     <property name="html">
+      <string notr="true">&lt;h2&gt;Boardes&lt;/h2&gt;
+&lt;p&gt;ユニバーサル基板設計ソフト&lt;/p&gt;
+&lt;h3&gt;サードパーティ ソフトウェア&lt;/h3&gt;
+&lt;p&gt;&lt;b&gt;Qt 6.10 以上&lt;/b&gt; &amp;mdash; GNU Lesser General Public License v3.0 (LGPLv3)&lt;br/&gt;
+&lt;a href=&quot;https://www.qt.io/&quot;&gt;https://www.qt.io/&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;&lt;b&gt;miniz&lt;/b&gt; &amp;mdash; MIT License&lt;br/&gt;
+&lt;a href=&quot;https://github.com/richgel999/miniz&quot;&gt;https://github.com/richgel999/miniz&lt;/a&gt;&lt;/p&gt;
+&lt;h3&gt;PasS 互換について&lt;/h3&gt;
+&lt;p&gt;PasS (Parts Arrange Support System) は uaubn 氏によるユニバーサル基板エディタです。
+Boardes は PasS のパーツライブラリを読み込んで変換する機能を持ちますが、PasS 自体とは無関係の
+独立したソフトウェアです。&lt;br/&gt;
+&lt;a href=&quot;http://uaubn.g2.xrea.com/pass/&quot;&gt;http://uaubn.g2.xrea.com/pass/&lt;/a&gt;&lt;/p&gt;</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="buttonRow">
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="closeButton">
+       <property name="text">
+        <string>閉じる</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>closeButton</sender>
+   <signal>clicked()</signal>
+   <receiver>About</receiver>
+   <slot>reject()</slot>
+  </connection>
+ </connections>
+</ui>

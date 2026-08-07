@@ -80,3 +80,8 @@ CMakeLists.txt.user*
 .rcc/
 .uic/
 /build*/
+
+# Qt Creator / Qt local build artifacts (contain machine-specific absolute paths)
+.qt/
+.qtcreator/
+
