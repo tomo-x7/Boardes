@@ -43,3 +43,18 @@ private:
 	WireLayer m_oldLayer;
 	WireLayer m_newLayer;
 };
+
+// オブジェクト一覧の目玉トグル用。表示/非表示は削除ではないので Undo 対象にする。
+class SetWireVisibleCommand : public QUndoCommand {
+public:
+	SetWireVisibleCommand(ToolContext *ctx, const QString &uuid, bool oldVisible, bool newVisible,
+						  QUndoCommand *parent = nullptr);
+	void undo() override;
+	void redo() override;
+
+private:
+	ToolContext *m_ctx;
+	QString m_uuid;
+	bool m_oldVisible;
+	bool m_newVisible;
+};

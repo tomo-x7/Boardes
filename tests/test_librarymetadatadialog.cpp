@@ -1,3 +1,4 @@
+#include <QLineEdit>
 #include <QTest>
 
 #include "ui/librarymetadatadialog.h"
@@ -10,6 +11,7 @@ private slots:
 	void roundTripsEditableFields();
 	void doesNotTouchIdOrContents();
 	void licenseChangeRederivesRedistributionRule();
+	void createModeAppliesEnteredId();
 };
 
 void TestLibraryMetadataDialog::roundTripsEditableFields() {
@@ -42,19 +44,17 @@ void TestLibraryMetadataDialog::roundTripsEditableFields() {
 void TestLibraryMetadataDialog::doesNotTouchIdOrContents() {
 	Library lib;
 	lib.id = "my-library";
-	lib.readOnly = false;
 	auto part = std::make_shared<Part>();
 	part->id = "P1";
 	lib.parts.insert(part->id, part);
 
 	LibraryMetadataDialog dialog;
-	dialog.setLibrary(lib);
+	dialog.setLibrary(lib);  // Edit モードになる (id 欄は編集不可、applyTo も id を触らない)
 	dialog.applyTo(lib);
 
 	QCOMPARE(lib.id, QStringLiteral("my-library"));
 	QCOMPARE(lib.parts.size(), 1);
 	QVERIFY(lib.parts.contains("P1"));
-	QVERIFY(!lib.readOnly);
 }
 
 void TestLibraryMetadataDialog::licenseChangeRederivesRedistributionRule() {
@@ -70,13 +70,26 @@ void TestLibraryMetadataDialog::licenseChangeRederivesRedistributionRule() {
 	auto *picker = dialog.findChild<LicensePickerWidget *>();
 	QVERIFY(picker != nullptr);
 	LicenseInfo newLicense;
-	newLicense.kind = LicenseKind::CC_BY_SA_4_0;
+	newLicense.kind = LicenseKind::CC_BY_4_0;
 	picker->setLicense(newLicense);
 
 	dialog.applyTo(lib);
-	QCOMPARE(static_cast<int>(lib.license.kind), static_cast<int>(LicenseKind::CC_BY_SA_4_0));
+	QCOMPARE(static_cast<int>(lib.license.kind), static_cast<int>(LicenseKind::CC_BY_4_0));
 	QVERIFY(lib.redistribution.allowed);
-	QCOMPARE(static_cast<int>(lib.redistribution.derivativePolicy), static_cast<int>(DerivativePolicy::MustMatchSame));
+	QVERIFY(lib.redistribution.attributionRequired);
+}
+
+void TestLibraryMetadataDialog::createModeAppliesEnteredId() {
+	LibraryMetadataDialog dialog;  // 既定は Create モード
+	auto *idEdit = dialog.findChild<QLineEdit *>();
+	QVERIFY(idEdit != nullptr);
+	idEdit->setText(QStringLiteral("com.example.new-lib"));
+	QCOMPARE(dialog.enteredId(), QStringLiteral("com.example.new-lib"));
+
+	Library lib;
+	lib.id = QStringLiteral("should-be-overwritten");
+	dialog.applyTo(lib);
+	QCOMPARE(lib.id, QStringLiteral("com.example.new-lib"));
 }
 
 QTEST_MAIN(TestLibraryMetadataDialog)

@@ -1,5 +1,6 @@
 #include <QTest>
 
+#include "model/board.h"
 #include "ui/tools/snapengine.h"
 
 class TestSnapEngine : public QObject {
@@ -11,6 +12,9 @@ private slots:
 	void handlesNegativeDirections();
 	void halfGranularityUsesFiveUnitSteps();
 	void freeGranularityUsesOneUnitSteps();
+	void snapsToGridUsingBoardOrigin();
+	void snapToGridFallsBackToSceneOriginWithoutBoard();
+	void snapForPlacementSubtractsAnchor();
 };
 
 void TestSnapEngine::snapsToNearestOfEightDirections() {
@@ -50,6 +54,38 @@ void TestSnapEngine::freeGranularityUsesOneUnitSteps() {
 	SnapEngine snap;
 	snap.setGranularity(units::Granularity::Free);
 	QCOMPARE(snap.snapForWireVertex(QPoint(0, 0), QPointF(23, 1)), QPoint(23, 0));
+}
+
+void TestSnapEngine::snapsToGridUsingBoardOrigin() {
+	BoardSpec board;
+	board.origin = QPoint(5, 5);
+	board.pitch = 10;
+	SnapEngine snap;
+	snap.setBoard(&board);
+
+	// origin=(5,5) の格子点は 5,15,25,... であり、シーン原点 (0,0) 基準の 10 単位刻みとは
+	// 常に半グリッドずれる。ここが Phase 11 で直したバグの核心。
+	QCOMPARE(snap.snapToGrid(QPointF(6, 6), 10), QPoint(5, 5));
+	QCOMPARE(snap.snapToGrid(QPointF(14, 14), 10), QPoint(15, 15));
+	QCOMPARE(snap.snapToGrid(QPointF(24, 26), 10), QPoint(25, 25));
+}
+
+void TestSnapEngine::snapToGridFallsBackToSceneOriginWithoutBoard() {
+	SnapEngine snap;  // board 未設定 (nullptr)
+	QCOMPARE(snap.snapToGrid(QPointF(4, 6), 10), QPoint(0, 10));
+	QCOMPARE(snap.snapToGrid(QPointF(23, 0), 10), QPoint(20, 0));
+}
+
+void TestSnapEngine::snapForPlacementSubtractsAnchor() {
+	BoardSpec board;
+	board.origin = QPoint(5, 5);
+	board.pitch = 10;
+	SnapEngine snap;
+	snap.setBoard(&board);
+
+	// アンカー (2,3) が穴 (15,15) に一致するような部品原点は (13,12)。
+	const QPoint anchor(2, 3);
+	QCOMPARE(snap.snapForPlacement(QPointF(14, 14), anchor), QPoint(13, 12));
 }
 
 QTEST_MAIN(TestSnapEngine)

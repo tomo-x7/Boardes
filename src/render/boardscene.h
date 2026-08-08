@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QColor>
+#include <QGraphicsItem>
 #include <QGraphicsScene>
 #include <QHash>
 #include <QString>
@@ -43,6 +45,16 @@ public:
 		return m_document;
 	}
 
+	// シーン座標 → モデル座標 (m_root ローカル座標)。裏面シーンは m_root に反転がかかっているため、
+	// ツールは必ずこれを通してモデル座標を得ること (直接 event->scenePos() をモデル座標として
+	// 使うと裏面で反転する)。
+	QPointF toModel(const QPointF &scenePos) const {
+		return m_root->mapFromScene(scenePos);
+	}
+	QPointF fromModel(const QPointF &modelPos) const {
+		return m_root->mapToScene(modelPos);
+	}
+
 	// Document::board / placements / wires が (Undo コマンド経由などで) 変わった後に呼ぶ。
 	void syncBoard();
 	void syncPlacements();  // ラベルの同期も一緒に行う
@@ -53,6 +65,23 @@ public:
 	void setForcePartOutline(bool onlyOutline);
 	void setLayerVisible(WireLayer layer, bool visible);
 	bool isLayerVisible(WireLayer layer) const;
+	// 接点 (ピン) マーカー。独自部品でも表示できる (Phase 13-5)。
+	void setPinMarkers(bool visible, QColor color, qreal diameterUnits);
+
+	// 裏面ビューの見え方 (表面シーンには影響しない)。
+	void setBackViewMode(BackViewMode mode);
+	BackViewMode backViewMode() const {
+		return m_backViewMode;
+	}
+	// 文字 (ラベル・ピン番号) を正しい向きに保つために、このシーンの現在の反転状態に
+	// 応じて打ち消すべき軸。表面シーンは常に false/false。
+	bool textFlipX() const;
+	bool textFlipY() const;
+
+	// 基板の外形そのもの (余白を含まない)。fitBoardToWindow() 用。
+	QRectF boardRect() const {
+		return m_boardRect;
+	}
 
 	// uuid から対応する描画アイテムを引く (選択・ヒットテスト等で使う)。
 	PlacementItem *placementItemFor(const QString &uuid) const {
@@ -101,6 +130,11 @@ private:
 	bool m_showLabels = true;
 	bool m_forceOutline = false;
 	QHash<int, bool> m_layerVisible;  // WireLayer -> visible、既定 true
+	BackViewMode m_backViewMode = BackViewMode::MirrorX;
+	QRectF m_boardRect;  // 余白なしの基板外形 (syncBoard() で更新)
+	bool m_pinMarkersVisible = true;
+	QColor m_pinMarkerColor{255, 0, 0};
+	qreal m_pinMarkerDiameter = 3.0;
 
 	ToolManager *m_toolManager = nullptr;
 

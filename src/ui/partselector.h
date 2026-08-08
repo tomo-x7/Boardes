@@ -11,6 +11,9 @@ class LibraryManager;
 class QComboBox;
 class QLineEdit;
 class QListView;
+class QLabel;
+class QPushButton;
+class QWidget;
 
 enum class PartSelectorMode {
 	ByLibrary,
@@ -69,10 +72,13 @@ public:
 
 	void setLibraryManager(LibraryManager *manager);
 
+	// 配置ツールが (Esc・右クリック・他ツールへの切替で) 解除されたときに呼ぶ。
+	// 「配置中」バーを消し、一覧の選択も外す。
+	void clearPendingPart();
+
 signals:
-	// 一覧をダブルクリックした (配置ツールに部品をセットする用途を想定)。
-	void partActivated(const QString &libraryId, const QString &partId);
-	// 選択が変わった (プロパティパネル等の連動用)。
+	// 部品がクリック (またはキーボード操作) で選択された。配置ツールに部品をセットする
+	// 用途を想定 (シングルクリックで配置対象になる。ダブルクリックは要求しない)。
 	void partSelected(const QString &libraryId, const QString &partId);
 
 private slots:
@@ -80,7 +86,6 @@ private slots:
 	void onLibraryComboChanged(int index);
 	void onCategoryComboChanged(int index);
 	void onSearchTextChanged(const QString &text);
-	void onActivated(const QModelIndex &index);
 	void onCurrentChanged(const QModelIndex &current);
 	void onLibrariesChanged();
 
@@ -92,6 +97,12 @@ private:
 	QLineEdit *m_searchEdit;
 	QListView *m_listView;
 	PartListModel *m_model;
+
+	// 「配置中: <アイコン> <名前> [解除]」バー。未選択のあいだは隠す。
+	QWidget *m_pendingBar;
+	QLabel *m_pendingIcon;
+	QLabel *m_pendingLabel;
+	QPushButton *m_pendingClearButton;
 
 	void rebuildLibraryCombo();
 	void rebuildCategoryCombo();

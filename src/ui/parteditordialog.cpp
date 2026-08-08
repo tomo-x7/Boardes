@@ -22,6 +22,8 @@
 #include <algorithm>
 #include <limits>
 
+#include "helphint.h"
+
 // ---------------------------------------------------------------- PartArtworkCanvas
 
 PartArtworkCanvas::PartArtworkCanvas(QWidget *parent) : QWidget(parent) {
@@ -51,6 +53,16 @@ void PartArtworkCanvas::setImage(const QImage &image) {
 void PartArtworkCanvas::setPins(const QVector<Pin> &pins) {
 	m_pins = pins;
 	update();
+}
+
+void PartArtworkCanvas::setAnchor(QPoint anchor) {
+	m_anchor = anchor;
+	update();
+}
+
+void PartArtworkCanvas::setAnchorPickMode(bool on) {
+	m_anchorPickMode = on;
+	setCursor(on ? Qt::CrossCursor : Qt::ArrowCursor);
 }
 
 QSize PartArtworkCanvas::sizeHint() const {
@@ -88,6 +100,17 @@ void PartArtworkCanvas::paintEvent(QPaintEvent *) {
 							  QString::number(pin.number));
 		}
 	}
+
+	// 基準点: 緑の十字 + 小円。ピンのマーカー (赤/青丸) とは別色にして見分けやすくする。
+	if (!m_image.isNull()) {
+		const QPoint center(m_anchor.x() * m_scale + m_scale / 2, m_anchor.y() * m_scale + m_scale / 2);
+		const int r = std::max(3, m_scale / 2);
+		painter.setPen(QPen(QColor(40, 200, 80), 2));
+		painter.setBrush(Qt::NoBrush);
+		painter.drawEllipse(center, r + 2, r + 2);
+		painter.drawLine(center - QPoint(r + 4, 0), center + QPoint(r + 4, 0));
+		painter.drawLine(center - QPoint(0, r + 4), center + QPoint(0, r + 4));
+	}
 }
 
 void PartArtworkCanvas::mousePressEvent(QMouseEvent *event) {
@@ -104,8 +127,6 @@ void PartArtworkCanvas::mousePressEvent(QMouseEvent *event) {
 // ---------------------------------------------------------------- PartEditorDialog
 
 PartEditorDialog::PartEditorDialog(QWidget *parent) : QDialog(parent) {
-	setWindowTitle(tr("部品を編集"));
-
 	m_canvas = new PartArtworkCanvas(this);
 	m_hintLabel = new QLabel(tr("「画像を開く」から部品のラスタ画像を読み込んでください。"), this);
 	m_hintLabel->setWordWrap(true);
@@ -154,6 +175,13 @@ PartEditorDialog::PartEditorDialog(QWidget *parent) : QDialog(parent) {
 	m_deletePinButton = new QPushButton(tr("選択したピンを削除"), this);
 	connect(m_deletePinButton, &QPushButton::clicked, this, &PartEditorDialog::onDeleteSelectedPin);
 
+	m_anchorLabel = new QLabel(this);
+	m_anchorPickButton = new QPushButton(tr("キャンバスで指定"), this);
+	m_anchorPickButton->setCheckable(true);
+	connect(m_anchorPickButton, &QPushButton::toggled, this, &PartEditorDialog::onToggleAnchorPick);
+	m_anchorResetButton = new QPushButton(tr("自動に戻す"), this);
+	connect(m_anchorResetButton, &QPushButton::clicked, this, &PartEditorDialog::onResetAnchor);
+
 	auto *canvasColumn = new QVBoxLayout();
 	canvasColumn->addWidget(openImageButton);
 	canvasColumn->addWidget(m_hintLabel);
@@ -185,21 +213,37 @@ PartEditorDialog::PartEditorDialog(QWidget *parent) : QDialog(parent) {
 	form->addRow(tr("種類:"), m_kindCombo);
 	form->addRow(tr("参照子接頭辞:"), m_refPrefixEdit);
 	sideColumn->addLayout(form);
-	sideColumn->addWidget(new QLabel(tr("ピン一覧 (キャンバス左クリックで追加/右クリックで削除):"), this));
+	auto *pinListLabelRow = new QHBoxLayout();
+	pinListLabelRow->addWidget(new QLabel(tr("ピン一覧:"), this));
+	pinListLabelRow->addWidget(helphint::button(
+		tr("キャンバス左クリックでピンを追加、右クリックで直近のピンを削除します。"), this));
+	pinListLabelRow->addStretch(1);
+	sideColumn->addLayout(pinListLabelRow);
 	sideColumn->addWidget(m_pinTable, /*stretch=*/1);
 	sideColumn->addWidget(m_deletePinButton);
+
+	auto *anchorRow = new QHBoxLayout();
+	anchorRow->addWidget(new QLabel(tr("基準点:"), this));
+	anchorRow->addWidget(m_anchorLabel, /*stretch=*/1);
+	anchorRow->addWidget(m_anchorPickButton);
+	anchorRow->addWidget(m_anchorResetButton);
+	anchorRow->addWidget(helphint::button(
+		tr("配置・移動時に基板の格子点 (穴の中心) に合わせる基準座標です。"
+		   "既定は番号が最小のピンの位置です。"),
+		this));
+	sideColumn->addLayout(anchorRow);
 
 	auto *columns = new QHBoxLayout();
 	columns->addLayout(canvasColumn, 1);
 	columns->addLayout(sideColumn, 1);
 
-	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-	connect(buttons, &QDialogButtonBox::accepted, this, &PartEditorDialog::onAccept);
-	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+	m_buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+	connect(m_buttons, &QDialogButtonBox::accepted, this, &PartEditorDialog::onAccept);
+	connect(m_buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
 	auto *mainLayout = new QVBoxLayout(this);
 	mainLayout->addLayout(columns, /*stretch=*/1);
-	mainLayout->addWidget(buttons);
+	mainLayout->addWidget(m_buttons);
 	resize(760, 560);
 
 	connect(m_canvas, &PartArtworkCanvas::clicked, this, &PartEditorDialog::onCanvasClicked);
@@ -207,6 +251,19 @@ PartEditorDialog::PartEditorDialog(QWidget *parent) : QDialog(parent) {
 	connect(m_eyedropperButton, &QPushButton::toggled, this, &PartEditorDialog::onToggleEyedropper);
 	connect(m_chromaKeyCheck, &QCheckBox::toggled, this, &PartEditorDialog::onChromaKeyToggled);
 	connect(m_pinTable, &QTableWidget::itemChanged, this, &PartEditorDialog::onPinTableItemChanged);
+
+	setMode(Mode::Create);
+	updateAnchorLabel();
+}
+
+void PartEditorDialog::setMode(Mode mode) {
+	if (mode == Mode::Create) {
+		setWindowTitle(tr("部品を作成"));
+		m_buttons->button(QDialogButtonBox::Ok)->setText(tr("作成"));
+	} else {
+		setWindowTitle(tr("部品を編集"));
+		m_buttons->button(QDialogButtonBox::Ok)->setText(tr("保存"));
+	}
 }
 
 void PartEditorDialog::updateColorButton(QPushButton *button, const QColor &color) {
@@ -244,11 +301,28 @@ void PartEditorDialog::onOpenImage() {
 	m_chromaKey = m_sourceImage.pixelColor(0, 0);
 	updateColorButton(m_chromaColorButton, m_chromaKey);
 	refreshCanvasArtwork();
+	updateAnchorLabel();
 }
 
 void PartEditorDialog::onToggleEyedropper(bool on) {
 	m_eyedropperActive = on;
 	m_canvas->setCursor(on ? Qt::CrossCursor : Qt::ArrowCursor);
+	if (on) {
+		m_anchorPickButton->setChecked(false);
+	}
+}
+
+void PartEditorDialog::onToggleAnchorPick(bool on) {
+	m_anchorPickActive = on;
+	m_canvas->setAnchorPickMode(on);
+	if (on) {
+		m_eyedropperButton->setChecked(false);
+	}
+}
+
+void PartEditorDialog::onResetAnchor() {
+	m_anchorExplicit = false;
+	updateAnchorLabel();
 }
 
 void PartEditorDialog::onChromaKeyToggled(bool) {
@@ -266,6 +340,13 @@ void PartEditorDialog::onChromaColorButtonClicked() {
 
 void PartEditorDialog::onCanvasClicked(QPoint imagePos, Qt::MouseButton button) {
 	if (m_sourceImage.isNull()) {
+		return;
+	}
+	if (m_anchorPickActive) {
+		m_anchor = imagePos;
+		m_anchorExplicit = true;
+		m_anchorPickButton->setChecked(false);  // onToggleAnchorPick(false) 経由で m_anchorPickActive も戻る
+		updateAnchorLabel();
 		return;
 	}
 	if (m_eyedropperActive) {
@@ -294,6 +375,7 @@ void PartEditorDialog::onCanvasClicked(QPoint imagePos, Qt::MouseButton button) 
 			renumberSequentially();
 			rebuildPinTable();
 			m_canvas->setPins(m_pins);
+			updateAnchorLabel();
 		}
 		return;
 	}
@@ -306,6 +388,7 @@ void PartEditorDialog::onCanvasClicked(QPoint imagePos, Qt::MouseButton button) 
 		m_pins.append(pin);
 		rebuildPinTable();
 		m_canvas->setPins(m_pins);
+		updateAnchorLabel();
 	}
 }
 
@@ -382,6 +465,33 @@ void PartEditorDialog::onDeleteSelectedPin() {
 	renumberSequentially();
 	rebuildPinTable();
 	m_canvas->setPins(m_pins);
+	updateAnchorLabel();
+}
+
+QPoint PartEditorDialog::effectiveAnchor() const {
+	// Part::resolveAnchor() の定義をそのまま流用する (自動決定ロジックを二重に
+	// 持たないため)。画像未読込のときは outline も空になるので (0,0) が返る。
+	Part p;
+	p.pins = m_pins;
+	p.outline = QRect(QPoint(0, 0), m_sourceImage.size());
+	p.anchor = m_anchor;
+	p.anchorExplicit = m_anchorExplicit;
+	return p.resolveAnchor();
+}
+
+void PartEditorDialog::updateAnchorLabel() {
+	const QPoint eff = effectiveAnchor();
+	if (m_anchorExplicit) {
+		m_anchorLabel->setText(tr("手動 (%1, %2)").arg(eff.x()).arg(eff.y()));
+	} else if (!m_pins.isEmpty()) {
+		auto it = std::min_element(m_pins.begin(), m_pins.end(),
+									[](const Pin &a, const Pin &b) { return a.number < b.number; });
+		m_anchorLabel->setText(tr("自動 (ピン%1: %2, %3)").arg(it->number).arg(eff.x()).arg(eff.y()));
+	} else {
+		m_anchorLabel->setText(tr("自動 (画像中心: %1, %2)").arg(eff.x()).arg(eff.y()));
+	}
+	m_anchorResetButton->setEnabled(m_anchorExplicit);
+	m_canvas->setAnchor(eff);
 }
 
 void PartEditorDialog::refreshCanvasArtwork() {
@@ -417,11 +527,15 @@ void PartEditorDialog::setPart(const Part &part) {
 		updateColorButton(m_chromaColorButton, m_chromaKey);
 	}
 	m_pins = part.pins;
+	m_anchor = part.anchor;
+	m_anchorExplicit = part.anchorExplicit;
 	m_hintLabel->setText(m_sourceImage.isNull()
 							  ? tr("「画像を開く」から部品のラスタ画像を読み込んでください。")
 							  : tr("%1 x %2 px").arg(m_sourceImage.width()).arg(m_sourceImage.height()));
 	refreshCanvasArtwork();
 	rebuildPinTable();
+	updateAnchorLabel();
+	setMode(Mode::Edit);
 }
 
 Part PartEditorDialog::part() const {
@@ -436,6 +550,8 @@ Part PartEditorDialog::part() const {
 	}
 	p.pins = m_pins;
 	p.outline = QRect(QPoint(0, 0), m_sourceImage.size());
+	p.anchor = m_anchor;
+	p.anchorExplicit = m_anchorExplicit;
 	if (m_chromaKeyCheck->isChecked()) {
 		p.artwork = Artwork::fromChromaKeyed(m_sourceImage, m_chromaKey);
 	} else {

@@ -47,6 +47,7 @@ set(BOARDES_CORE_SOURCES
 	src/model/stats.cpp
 
 	src/io/jsonutil.h
+	src/io/loadresult.h
 	src/io/zipio.h
 	src/io/zipio.cpp
 	src/io/partio.h
@@ -95,8 +96,15 @@ set(BOARDES_CORE_SOURCES
 	src/ui/about.h
 	src/ui/about.cpp
 	src/ui/about.ui
+	src/ui/helphint.h
+	src/ui/zoombar.h
+	src/ui/zoombar.cpp
+	src/ui/viewlink.h
+	src/ui/viewlink.cpp
 	src/ui/partselector.h
 	src/ui/partselector.cpp
+	src/ui/objectlistpanel.h
+	src/ui/objectlistpanel.cpp
 	src/ui/drcpanel.h
 	src/ui/drcpanel.cpp
 	src/ui/statspanel.h
@@ -113,8 +121,28 @@ set(BOARDES_CORE_SOURCES
 	src/ui/duplicatelibrarydialog.cpp
 	src/ui/librarymanagerdialog.h
 	src/ui/librarymanagerdialog.cpp
+	src/ui/partpickerdialog.h
+	src/ui/partpickerdialog.cpp
+	src/ui/exportpackagedialog.h
+	src/ui/exportpackagedialog.cpp
 	src/ui/exportimageoptionsdialog.h
 	src/ui/exportimageoptionsdialog.cpp
+	src/ui/actionregistry.h
+	src/ui/actionregistry.cpp
+	src/ui/toolbarlayout.h
+	src/ui/toolbarlayout.cpp
+	src/ui/toolbarcustomizedialog.h
+	src/ui/toolbarcustomizedialog.cpp
+	src/ui/input/inputgesture.h
+	src/ui/input/inputgesture.cpp
+	src/ui/input/commandregistry.h
+	src/ui/input/commandregistry.cpp
+	src/ui/input/keymap.h
+	src/ui/input/keymap.cpp
+	src/ui/input/keymapdialog.h
+	src/ui/input/keymapdialog.cpp
+	src/ui/input/gesturecapturedialog.h
+	src/ui/input/gesturecapturedialog.cpp
 	src/ui/tools/toolcontext.h
 	src/ui/tools/toolcontext.cpp
 	src/ui/tools/tool.h

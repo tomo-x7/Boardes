@@ -9,8 +9,11 @@
 #include "render/boardview.h"
 #include "render/items/placementitem.h"
 #include "render/items/wireitem.h"
+#include "ui/tools/placeparttool.h"
+#include "ui/tools/selecttool.h"
 #include "ui/tools/snapengine.h"
 #include "ui/tools/toolmanager.h"
+#include "ui/tools/wiretool.h"
 
 // 実際の QGraphicsView に QTest::mouseClick/mousePress/mouseMove/mouseRelease で
 // 本物のマウスイベントを送り込み、BoardView -> QGraphicsScene -> ToolManager -> Tool
@@ -26,9 +29,12 @@ private slots:
 	void placePartToolAddsPlacementOnClick();
 	void selectToolDragMovesPlacementWithUndo();
 	void selectToolDeleteKeyRemovesSelection();
-	void wireToolDrawsPolylineOnClicksAndFinishesOnDoubleClick();
+	void wireToolDrawsPolylineOnClicksAndFinishesOnRightClick();
+	void wireToolEscDiscardsInProgressWire();
 	void rotateShortcutRotatesSelection();
 	void hoveringWireHighlightsWholeNetButNotOtherNets();
+	void escapeReturnsPlacePartToolToSelectTool();
+	void backSceneCoordinatesAreNotMirrored();
 
 private:
 	std::unique_ptr<QTemporaryDir> m_appDataDir;
@@ -69,6 +75,13 @@ void TestToolsIntegration::init() {
 	QImage img(20, 10, QImage::Format_RGB888);
 	img.fill(Qt::blue);
 	part.artwork = Artwork::fromImageAsIs(img);
+	// ピン1を原点 (0,0) に置く。これにより resolveAnchor() が (0,0) を返すので、
+	// 配置位置 (Placement::pos) はそのままスナップ後の格子点と一致する
+	// (このテストの各アサーションは「部品原点=クリック位置」という前提で書かれている)。
+	Pin pin;
+	pin.number = 1;
+	pin.pos = QPoint(0, 0);
+	part.pins = {pin};
 	const QString bpartPath = m_appDataDir->filePath("P1.bpart");
 	QVERIFY(partio::saveEmbedded(part, bpartPath));
 	const auto importResult = m_libMgr->importPartFile(bpartPath);
@@ -87,6 +100,7 @@ void TestToolsIntegration::init() {
 	ctx.frontScene = m_frontScene.get();
 	ctx.backScene = m_backScene.get();
 	static SnapEngine snapEngine;  // Granularity::Full が既定
+	snapEngine.setBoard(&m_doc->board);
 	ctx.snapEngine = &snapEngine;
 	m_toolManager = std::make_unique<ToolManager>(ctx);
 	m_frontScene->setToolManager(m_toolManager.get());
@@ -182,18 +196,38 @@ void TestToolsIntegration::selectToolDeleteKeyRemovesSelection() {
 	QCOMPARE(m_doc->placements.size(), 1);
 }
 
-void TestToolsIntegration::wireToolDrawsPolylineOnClicksAndFinishesOnDoubleClick() {
-	m_toolManager->activateWireTool(WireLayer::FrontBare);
+void TestToolsIntegration::wireToolDrawsPolylineOnClicksAndFinishesOnRightClick() {
+	m_toolManager->activateWireTool(WireKind::Bare);
 
+	// 左クリックは頂点を追加するだけ。右クリック (またはダブルクリックではなく Enter) は
+	// それまでに追加済みの頂点で確定するだけで、右クリック位置そのものを新たな頂点として
+	// 追加はしない (13-3)。3頂点で確定したいなら3回左クリックしてから右クリックする。
 	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
 	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 60)));
 	QCOMPARE(m_doc->wires.size(), 0);  // まだ確定していない
 
-	QTest::mouseDClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 60)));
+	QTest::mouseClick(m_frontView->viewport(), Qt::RightButton, Qt::NoModifier, viewPosFor(QPoint(60, 60)));
 	QCOMPARE(m_doc->wires.size(), 1);
 	QCOMPARE(m_doc->wires[0]->points.size(), 3);
 	QCOMPARE(static_cast<int>(m_doc->wires[0]->layer), static_cast<int>(WireLayer::FrontBare));
 	QVERIFY(m_frontScene->wireItemFor(m_doc->wires[0]->uuid) != nullptr);
+}
+
+void TestToolsIntegration::wireToolEscDiscardsInProgressWire() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+
+	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
+	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+
+	// Esc は「作図中の破棄」を優先する。ツール自体はまだ WireTool のまま。
+	m_toolManager->cancelCurrent();
+	QCOMPARE(m_doc->wires.size(), 0);
+	QVERIFY(dynamic_cast<WireTool *>(m_toolManager->activeTool()) != nullptr);
+
+	// 何も作図していない状態でもう一度 Esc すると、今度は選択ツールに戻る。
+	m_toolManager->cancelCurrent();
+	QVERIFY(dynamic_cast<SelectTool *>(m_toolManager->activeTool()) != nullptr);
 }
 
 void TestToolsIntegration::rotateShortcutRotatesSelection() {
@@ -243,6 +277,40 @@ void TestToolsIntegration::hoveringWireHighlightsWholeNetButNotOtherNets() {
 	QTest::mouseMove(m_frontView->viewport(), viewPosFor(QPoint(200, 200)));
 	QVERIFY(!m_frontScene->wireItemFor("w1")->isNetHighlighted());
 	QVERIFY(!m_frontScene->wireItemFor("w2")->isNetHighlighted());
+}
+
+void TestToolsIntegration::escapeReturnsPlacePartToolToSelectTool() {
+	m_toolManager->activatePlacePartTool(m_libId, m_partId);
+	QVERIFY(dynamic_cast<PlacePartTool *>(m_toolManager->activeTool()) != nullptr);
+
+	m_toolManager->cancelCurrent();
+	QVERIFY(dynamic_cast<SelectTool *>(m_toolManager->activeTool()) != nullptr);
+}
+
+void TestToolsIntegration::backSceneCoordinatesAreNotMirrored() {
+	// 裏面ビューで「見た目上モデル座標 (50,50) にあたる位置」をクリックしたとき、
+	// 実際にモデル座標 (50,50) に配置されること。裏面シーンでは m_root に水平反転
+	// (QTransform(-1,0,0,1,size.width(),0)) がかかっているため、そのシーン座標は
+	// (size.width()-50, 50) になる。ツールが toModel() を経由せず生の scenePos() を
+	// そのままモデル座標として使ってしまうと、ここで反転した位置に置かれてしまう
+	// (このバグの回帰テスト)。
+	auto backView = std::make_unique<BoardView>();
+	backView->setScene(m_backScene.get());
+	backView->resize(600, 600);
+	backView->show();
+	QVERIFY(QTest::qWaitForWindowExposed(backView.get()));
+	backView->resetZoom();
+
+	m_toolManager->activatePlacePartTool(m_libId, m_partId);
+	const QPointF targetModel(50, 50);
+	const QPointF targetScene = m_backScene->fromModel(targetModel);
+	QVERIFY(!qFuzzyCompare(targetScene.x(), targetModel.x()));  // 前提: 実際に反転している
+	const QPoint clickAt = backView->mapFromScene(targetScene);
+	QTest::mouseClick(backView->viewport(), Qt::LeftButton, Qt::NoModifier, clickAt);
+
+	QCOMPARE(m_doc->placements.size(), 1);
+	QCOMPARE(m_doc->placements[0]->pos, QPoint(50, 50));
+	QCOMPARE(m_doc->placements[0]->side, Side::Back);
 }
 
 QTEST_MAIN(TestToolsIntegration)

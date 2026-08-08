@@ -2,6 +2,7 @@
 
 #include <QColor>
 #include <QGraphicsItem>
+#include <QImage>
 #include <QVector>
 
 #include "../../model/wire.h"
@@ -10,6 +11,7 @@
 //   - WireTool の「入力中の配線」プレビュー
 //   - DraftTool の下書きストローク (保存・エクスポートされない一時レイヤ)
 //   - スナップ位置のヒント表示
+//   - PlacePartTool の配置プレビュー (ゴースト)
 class OverlayItem : public QGraphicsItem {
 public:
 	explicit OverlayItem(QGraphicsItem *parent = nullptr);
@@ -20,6 +22,10 @@ public:
 	// 入力中の配線: 確定済みの点列 + 現在のカーソル位置。
 	void setWirePreview(const QVector<QPoint> &confirmedPoints, QPoint cursorPoint, WireLayer layer);
 	void clearWirePreview();
+
+	// 配置ツールの半透明プレビュー。valid=false ならスナップ先が基板外等で赤枠にする。
+	void setPlacementGhost(const QImage &image, QPoint pos, QSize size, bool valid);
+	void clearPlacementGhost();
 
 	// 下書きモード: 完成したストロークを1本追加する。
 	void addDraftStroke(const QVector<QPointF> &points);
@@ -46,6 +52,12 @@ private:
 
 	bool m_snapHintVisible = false;
 	QPoint m_snapHintPos;
+
+	bool m_hasGhost = false;
+	QImage m_ghostImage;
+	QPoint m_ghostPos;
+	QSize m_ghostSize;
+	bool m_ghostValid = true;
 
 	QRectF m_bounds;
 	void recomputeBounds();

@@ -1,12 +1,17 @@
 #include "partselector.h"
 
 #include <QComboBox>
+#include <QHBoxLayout>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QPixmap>
+#include <QPushButton>
 #include <QVBoxLayout>
 #include <algorithm>
 
 #include "../model/librarymanager.h"
+#include "helphint.h"
 
 namespace {
 constexpr int kIconSize = 48;
@@ -38,7 +43,10 @@ void PartListModel::rebuild() {
 		const auto &libs = m_libraryManager->libraries();
 		for (auto libIt = libs.constBegin(); libIt != libs.constEnd(); ++libIt) {
 			const QString &libId = libIt.key();
-			if (m_mode != PartSelectorMode::All && libId != m_libraryFilter) {
+			// libraryFilter が空なら「すべてのライブラリ」を意味する (mode==All のときは
+			// 元々常にそう。mode==ByCategory でも「すべてのライブラリ」を選べるようにした
+			// ため、空判定で分岐する — 個別のライブラリ名が空文字列になることは無い)。
+			if (!m_libraryFilter.isEmpty() && libId != m_libraryFilter) {
 				continue;
 			}
 			const Library &lib = *libIt.value();
@@ -115,13 +123,17 @@ PartSelector::PartSelector(QWidget *parent) : QWidget(parent) {
 	m_modeCombo->addItem(QStringLiteral("ライブラリ別"), static_cast<int>(PartSelectorMode::ByLibrary));
 	m_modeCombo->addItem(QStringLiteral("カテゴリ別"), static_cast<int>(PartSelectorMode::ByCategory));
 	m_modeCombo->addItem(QStringLiteral("全部品"), static_cast<int>(PartSelectorMode::All));
+	helphint::attach(m_modeCombo, QStringLiteral("部品一覧の絞り込み方法を選びます。"));
 
 	m_libraryCombo = new QComboBox(this);
+	helphint::attach(m_libraryCombo, QStringLiteral("表示するライブラリを選びます。"));
 	m_categoryCombo = new QComboBox(this);
+	helphint::attach(m_categoryCombo, QStringLiteral("表示するカテゴリを選びます。"));
 
 	m_searchEdit = new QLineEdit(this);
 	m_searchEdit->setPlaceholderText(QStringLiteral("部品を検索..."));
 	m_searchEdit->setClearButtonEnabled(true);
+	helphint::attach(m_searchEdit, QStringLiteral("部品名・キーワードで絞り込みます。"));
 
 	m_listView = new QListView(this);
 	m_listView->setViewMode(QListView::IconMode);
@@ -136,19 +148,39 @@ PartSelector::PartSelector(QWidget *parent) : QWidget(parent) {
 	m_model = new PartListModel(this);
 	m_listView->setModel(m_model);
 
+	m_pendingIcon = new QLabel(this);
+	m_pendingIcon->setFixedSize(20, 20);
+	m_pendingIcon->setScaledContents(true);
+	m_pendingLabel = new QLabel(this);
+	m_pendingClearButton = new QPushButton(tr("解除"), this);
+	connect(m_pendingClearButton, &QPushButton::clicked, this, &PartSelector::clearPendingPart);
+	auto *pendingLayout = new QHBoxLayout();
+	pendingLayout->addWidget(new QLabel(tr("配置中:"), this));
+	pendingLayout->addWidget(m_pendingIcon);
+	pendingLayout->addWidget(m_pendingLabel, /*stretch=*/1);
+	pendingLayout->addWidget(m_pendingClearButton);
+	m_pendingBar = new QWidget(this);
+	m_pendingBar->setLayout(pendingLayout);
+	m_pendingBar->setStyleSheet(
+		QStringLiteral("QWidget { background: palette(highlight); border-radius: 3px; }"
+					   "QLabel { color: palette(highlighted-text); }"));
+	m_pendingBar->setVisible(false);
+
 	auto *layout = new QVBoxLayout(this);
 	layout->setContentsMargins(4, 4, 4, 4);
 	layout->addWidget(m_modeCombo);
 	layout->addWidget(m_libraryCombo);
 	layout->addWidget(m_categoryCombo);
 	layout->addWidget(m_searchEdit);
+	layout->addWidget(m_pendingBar);
 	layout->addWidget(m_listView, /*stretch=*/1);
 
 	connect(m_modeCombo, &QComboBox::currentIndexChanged, this, &PartSelector::onModeChanged);
 	connect(m_libraryCombo, &QComboBox::currentIndexChanged, this, &PartSelector::onLibraryComboChanged);
 	connect(m_categoryCombo, &QComboBox::currentIndexChanged, this, &PartSelector::onCategoryComboChanged);
 	connect(m_searchEdit, &QLineEdit::textChanged, this, &PartSelector::onSearchTextChanged);
-	connect(m_listView, &QListView::activated, this, &PartSelector::onActivated);
+	// シングルクリック (キーボード操作含む) で選択 = 配置対象になる。ダブルクリックは
+	// 要求しない (以前はダブルクリックでのみ配置ツールに入れたが使いにくいとの指摘のため)。
 	connect(m_listView->selectionModel(), &QItemSelectionModel::currentChanged, this,
 			[this](const QModelIndex &current, const QModelIndex &) { onCurrentChanged(current); });
 
@@ -183,6 +215,12 @@ void PartSelector::rebuildLibraryCombo() {
 	const QString prev = m_libraryCombo->currentData().toString();
 	m_libraryCombo->blockSignals(true);
 	m_libraryCombo->clear();
+	// カテゴリ別モードだけ「すべてのライブラリ」を選べる (同じ id のカテゴリを横断して
+	// 一覧できると便利なため)。ライブラリ別モードでは元々「全部品」モードが別にあるので
+	// 不要。
+	if (currentMode() == PartSelectorMode::ByCategory) {
+		m_libraryCombo->addItem(QStringLiteral("すべてのライブラリ"), QString());
+	}
 	if (m_libraryManager) {
 		const auto &libs = m_libraryManager->libraries();
 		for (auto it = libs.constBegin(); it != libs.constEnd(); ++it) {
@@ -202,13 +240,34 @@ void PartSelector::rebuildCategoryCombo() {
 	m_categoryCombo->addItem(QStringLiteral("すべてのカテゴリ"), QString());
 	if (m_libraryManager) {
 		const QString libId = m_libraryCombo->currentData().toString();
-		if (const auto lib = m_libraryManager->library(libId)) {
-			QVector<CategoryInfo> cats = lib->categories;
-			std::sort(cats.begin(), cats.end(),
+		if (!libId.isEmpty()) {
+			if (const auto lib = m_libraryManager->library(libId)) {
+				QVector<CategoryInfo> cats = lib->categories;
+				std::sort(cats.begin(), cats.end(),
+						 [](const CategoryInfo &a, const CategoryInfo &b) { return a.order < b.order; });
+				for (const auto &c : cats) {
+					m_categoryCombo->addItem(c.icon.isNull() ? QIcon() : QIcon(QPixmap::fromImage(c.icon)), c.name,
+											 c.id);
+				}
+			}
+		} else if (currentMode() == PartSelectorMode::ByCategory) {
+			// 「すべてのライブラリ」: 全ライブラリのカテゴリを id で統合する
+			// (同じ id のカテゴリは1行にまとめ、表示名は最初に見つかったものを使う)。
+			QVector<CategoryInfo> merged;
+			const auto &libs = m_libraryManager->libraries();
+			for (auto libIt = libs.constBegin(); libIt != libs.constEnd(); ++libIt) {
+				for (const auto &c : libIt.value()->categories) {
+					const bool alreadyPresent =
+						std::any_of(merged.begin(), merged.end(), [&](const CategoryInfo &m) { return m.id == c.id; });
+					if (!alreadyPresent) {
+						merged.append(c);
+					}
+				}
+			}
+			std::sort(merged.begin(), merged.end(),
 					 [](const CategoryInfo &a, const CategoryInfo &b) { return a.order < b.order; });
-			for (const auto &c : cats) {
-				m_categoryCombo->addItem(c.icon.isNull() ? QIcon() : QIcon(QPixmap::fromImage(c.icon)), c.name,
-										 c.id);
+			for (const auto &c : merged) {
+				m_categoryCombo->addItem(c.icon.isNull() ? QIcon() : QIcon(QPixmap::fromImage(c.icon)), c.name, c.id);
 			}
 		}
 	}
@@ -243,20 +302,28 @@ void PartSelector::onSearchTextChanged(const QString &) {
 	applyFilter();
 }
 
-void PartSelector::onActivated(const QModelIndex &index) {
-	if (!index.isValid()) {
-		return;
-	}
-	emit partActivated(index.data(PartListModel::LibraryIdRole).toString(),
-					   index.data(PartListModel::PartIdRole).toString());
-}
-
 void PartSelector::onCurrentChanged(const QModelIndex &current) {
 	if (!current.isValid()) {
+		m_pendingBar->setVisible(false);
 		return;
 	}
+	const QString name = current.data(Qt::DisplayRole).toString();
+	const QIcon icon = current.data(Qt::DecorationRole).value<QIcon>();
+	m_pendingLabel->setText(name);
+	if (!icon.isNull()) {
+		m_pendingIcon->setPixmap(icon.pixmap(20, 20));
+	} else {
+		m_pendingIcon->setPixmap(QPixmap());
+	}
+	m_pendingBar->setVisible(true);
 	emit partSelected(current.data(PartListModel::LibraryIdRole).toString(),
 					  current.data(PartListModel::PartIdRole).toString());
+}
+
+void PartSelector::clearPendingPart() {
+	m_listView->clearSelection();
+	m_listView->selectionModel()->clearCurrentIndex();
+	m_pendingBar->setVisible(false);
 }
 
 void PartSelector::onLibrariesChanged() {

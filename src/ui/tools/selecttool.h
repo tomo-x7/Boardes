@@ -34,7 +34,12 @@ public:
 	bool mouseDoubleClick(BoardScene *scene, QGraphicsSceneMouseEvent *event) override;
 	bool keyPress(BoardScene *scene, QKeyEvent *event) override;
 	bool contextMenu(BoardScene *scene, QGraphicsSceneContextMenuEvent *event) override;
-	QString statusHint() const override;
+	bool cancel() override;
+	QString statusHint(const Keymap &keymap) const override;
+
+signals:
+	// 「選択: 部品3 / 配線1」のような要約文字列。選択が無いときは空文字。
+	void selectionSummaryChanged(const QString &summary);
 
 private slots:
 	void onSelectionChanged();
@@ -46,7 +51,9 @@ private:
 	};
 
 	bool m_dragging = false;
-	QPointF m_dragPressScenePos;
+	QPointF m_dragPressModelPos;
+	// クリックした部品の「基準点 (anchor)」のモデル座標。ドラッグ中はこれを格子点に
+	// スナップし、その差分を選択中の全部品に一様に適用する (11-4)。
 	QPoint m_dragAnchorStart;
 	QPoint m_lastDragDelta;
 	QVector<DragEntry> m_dragEntries;
@@ -62,6 +69,7 @@ private:
 	void syncSelectionAcrossScenes(BoardScene *changedScene);
 	QVector<QString> selectedPlacementUuids() const;
 	QVector<QString> selectedWireUuids() const;
+	void emitSelectionSummary();
 
 	void rotateSelected();
 	void flipSelected();
@@ -69,5 +77,5 @@ private:
 	void nudgeSelected(QPoint delta);
 	void copySelected();
 	void pasteWithOffset(QPoint offset);
-	void pasteAt(QPointF scenePos);
+	void pasteAt(QPointF modelPos);
 };

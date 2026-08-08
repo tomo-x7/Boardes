@@ -24,6 +24,9 @@ private slots:
 	void labelItemCancelsMirrorOnBackScene();
 	void wiresAreRoutedToTheCorrectSideScene();
 	void removingPlacementRemovesItsRenderItem();
+	void backViewModeThroughHasIdentityTransform();
+	void backViewModeMirrorYFlipsVertically();
+	void boardRectExcludesPanningMargin();
 
 private:
 	std::unique_ptr<Document> makeTestDocument();
@@ -146,6 +149,40 @@ void TestBoardScene::removingPlacementRemovesItsRenderItem() {
 	doc->placements.clear();
 	scene.syncPlacements();
 	QVERIFY(scene.placementItemFor("p1") == nullptr);
+}
+
+void TestBoardScene::backViewModeThroughHasIdentityTransform() {
+	auto doc = makeTestDocument();
+	BoardScene backScene(Side::Back);
+	backScene.setDocument(doc.get(), nullptr);
+	backScene.setBackViewMode(BackViewMode::Through);
+	QVERIFY(backScene.rootItem()->transform().isIdentity());
+	QVERIFY(!backScene.textFlipX());
+	QVERIFY(!backScene.textFlipY());
+}
+
+void TestBoardScene::backViewModeMirrorYFlipsVertically() {
+	auto doc = makeTestDocument();
+	BoardScene backScene(Side::Back);
+	backScene.setDocument(doc.get(), nullptr);
+	backScene.setBackViewMode(BackViewMode::MirrorY);
+	const QTransform t = backScene.rootItem()->transform();
+	QCOMPARE(t.m11(), 1.0);
+	QCOMPARE(t.m22(), -1.0);
+	QCOMPARE(t.dy(), 80.0);  // board.size.height()
+	QVERIFY(!backScene.textFlipX());
+	QVERIFY(backScene.textFlipY());
+}
+
+void TestBoardScene::boardRectExcludesPanningMargin() {
+	auto doc = makeTestDocument();
+	BoardScene scene(Side::Front);
+	scene.setDocument(doc.get(), nullptr);
+	// boardRect() は基板ぴったり (書き出し・全体表示用)。sceneRect() はパン用の余白を
+	// 持つのでそれより広い (Phase 12)。
+	QCOMPARE(scene.boardRect(), QRectF(0, 0, 100, 80));
+	QVERIFY(scene.sceneRect().width() > scene.boardRect().width());
+	QVERIFY(scene.sceneRect().height() > scene.boardRect().height());
 }
 
 QTEST_MAIN(TestBoardScene)

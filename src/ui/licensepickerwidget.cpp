@@ -1,5 +1,6 @@
 #include "licensepickerwidget.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
 #include <QLabel>
@@ -11,23 +12,10 @@ namespace {
 
 const QVector<LicenseKind> &allLicenseKinds() {
 	static const QVector<LicenseKind> kinds = {
-		LicenseKind::CC0_1_0,   LicenseKind::CC_BY_4_0,       LicenseKind::CC_BY_SA_4_0, LicenseKind::CC_BY_NC_4_0,
-		LicenseKind::MIT,       LicenseKind::Apache_2_0,      LicenseKind::CERN_OHL_P,   LicenseKind::CERN_OHL_S,
+		LicenseKind::CC0_1_0, LicenseKind::CC_BY_4_0, LicenseKind::MIT,
 		LicenseKind::AllRightsReserved, LicenseKind::Custom,
 	};
 	return kinds;
-}
-
-QString derivativePolicyText(DerivativePolicy p) {
-	switch (p) {
-	case DerivativePolicy::Any:
-		return QObject::tr("自由に選べます");
-	case DerivativePolicy::MustMatchSame:
-		return QObject::tr("元と同じライセンスに固定されます");
-	case DerivativePolicy::NcFamilyOnly:
-		return QObject::tr("非営利 (NC) 系ライセンスに固定されます");
-	}
-	return QString();
 }
 
 }  // namespace
@@ -42,6 +30,8 @@ LicensePickerWidget::LicensePickerWidget(QWidget *parent) : QWidget(parent) {
 	m_customTextEdit = new QTextEdit(this);
 	m_customTextEdit->setPlaceholderText(tr("ライセンス全文 (任意。入力するとパッケージに LICENSE.txt として同梱されます)"));
 	m_customTextEdit->setMaximumHeight(80);
+	m_customAllowedCheck = new QCheckBox(tr("再配布を許可する"), this);
+	m_customAttributionCheck = new QCheckBox(tr("著作権表示を必須にする"), this);
 
 	m_customFieldsWidget = new QWidget(this);
 	auto *customForm = new QFormLayout(m_customFieldsWidget);
@@ -49,6 +39,8 @@ LicensePickerWidget::LicensePickerWidget(QWidget *parent) : QWidget(parent) {
 	customForm->addRow(tr("名前:"), m_customNameEdit);
 	customForm->addRow(tr("URL:"), m_customUrlEdit);
 	customForm->addRow(tr("全文:"), m_customTextEdit);
+	customForm->addRow(QString(), m_customAllowedCheck);
+	customForm->addRow(QString(), m_customAttributionCheck);
 
 	m_previewLabel = new QLabel(this);
 	m_previewLabel->setWordWrap(true);
@@ -65,6 +57,8 @@ LicensePickerWidget::LicensePickerWidget(QWidget *parent) : QWidget(parent) {
 	connect(m_customNameEdit, &QLineEdit::textChanged, this, &LicensePickerWidget::licenseChanged);
 	connect(m_customUrlEdit, &QLineEdit::textChanged, this, &LicensePickerWidget::licenseChanged);
 	connect(m_customTextEdit, &QTextEdit::textChanged, this, &LicensePickerWidget::licenseChanged);
+	connect(m_customAllowedCheck, &QCheckBox::toggled, this, &LicensePickerWidget::updatePreview);
+	connect(m_customAttributionCheck, &QCheckBox::toggled, this, &LicensePickerWidget::updatePreview);
 
 	updateCustomFieldsVisibility();
 	updatePreview();
@@ -110,6 +104,23 @@ LicenseInfo LicensePickerWidget::license() const {
 	return info;
 }
 
+void LicensePickerWidget::setRedistributionRule(const RedistributionRule &rule) {
+	m_customAllowedCheck->setChecked(rule.allowed);
+	m_customAttributionCheck->setChecked(rule.attributionRequired);
+	updatePreview();
+}
+
+RedistributionRule LicensePickerWidget::redistributionRule() const {
+	const LicenseKind kind = static_cast<LicenseKind>(m_kindCombo->currentData().toInt());
+	if (kind != LicenseKind::Custom) {
+		return redistributionRuleFor(kind);
+	}
+	RedistributionRule rule;
+	rule.allowed = m_customAllowedCheck->isChecked();
+	rule.attributionRequired = m_customAttributionCheck->isChecked();
+	return rule;
+}
+
 void LicensePickerWidget::onKindComboChanged(int) {
 	updateCustomFieldsVisibility();
 	updatePreview();
@@ -121,15 +132,12 @@ void LicensePickerWidget::updateCustomFieldsVisibility() {
 }
 
 void LicensePickerWidget::updatePreview() {
-	const LicenseKind kind = static_cast<LicenseKind>(m_kindCombo->currentData().toInt());
-	const RedistributionRule rule = redistributionRuleFor(kind);
+	const RedistributionRule rule = redistributionRule();
 	QString text;
 	if (!rule.allowed) {
 		text = tr("再配布: 不可 (このライブラリを他人と共有する用途にはエクスポートできません)");
 	} else {
-		text = tr("再配布: 可%1 / 派生物のライセンス: %2")
-					   .arg(rule.attributionRequired ? tr(" (著作権表示が必要)") : QString(),
-							derivativePolicyText(rule.derivativePolicy));
+		text = tr("再配布: 可%1").arg(rule.attributionRequired ? tr(" (著作権表示が必要)") : QString());
 	}
 	m_previewLabel->setText(text);
 	emit licenseChanged();

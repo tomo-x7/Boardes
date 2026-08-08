@@ -1,0 +1,36 @@
+#pragma once
+
+#include <QWidget>
+
+class QSlider;
+class QComboBox;
+class BoardView;
+
+// ステータスバー右端に置く倍率バー (Office 等でおなじみの構成)。
+//
+// 対象は「最後にフォーカスされたビュー」(setTargetView() で切り替える。呼び出し側は
+// BoardView::focusReceived を受けてこれを呼ぶ)。スライダーは対数目盛 (見た目のドラッグ量が
+// 倍率の相対変化に対応するようにするため)。
+class ZoomBar : public QWidget {
+	Q_OBJECT
+
+public:
+	explicit ZoomBar(QWidget *parent = nullptr);
+
+	// 非所有。nullptr にすると無効表示になる。
+	void setTargetView(BoardView *view);
+
+private slots:
+	void onSliderChanged(int value);
+	void onComboActivated(int index);
+	void onViewZoomChanged(qreal factor);
+
+private:
+	BoardView *m_view = nullptr;
+	QSlider *m_slider;
+	QComboBox *m_combo;
+	bool m_updating = false;
+
+	void applyZoom(qreal factor);
+	void syncFromView();
+};

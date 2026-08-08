@@ -6,6 +6,7 @@
 #include "model/document.h"
 #include "render/boardscene.h"
 #include "render/items/placementitem.h"
+#include "render/items/wireitem.h"
 #include "ui/tools/toolcontext.h"
 
 namespace {
@@ -44,6 +45,8 @@ private slots:
 	void rotatePlacementUndoRedo();
 	void flipPlacementSideUndoRedo();
 	void setLabelUndoRedo();
+	void setPlacementVisibleUndoRedo();
+	void setWireVisibleUndoRedo();
 	void addWireUndoRedo();
 	void removeWirePreservesData();
 	void changeWireLayerUndoRedo();
@@ -161,6 +164,41 @@ void TestCommands::setLabelUndoRedo() {
 	stack->undo();
 	QCOMPARE(m_doc->placements[0]->refDes, QStringLiteral("R1"));
 	QCOMPARE(m_doc->placements[0]->value, QStringLiteral("10k"));
+}
+
+void TestCommands::setPlacementVisibleUndoRedo() {
+	m_doc->placements.append(makePlacement("p1", QPoint(0, 0)));
+	m_front->syncPlacements();
+	QVERIFY(m_doc->placements[0]->visible);
+	QVERIFY(m_front->placementItemFor("p1")->isVisible());
+
+	auto *stack = m_doc->undoStack();
+	stack->push(new SetPlacementVisibleCommand(m_ctx.get(), "p1", true, false));
+	QVERIFY(!m_doc->placements[0]->visible);
+	QVERIFY(!m_front->placementItemFor("p1")->isVisible());
+
+	stack->undo();
+	QVERIFY(m_doc->placements[0]->visible);
+	QVERIFY(m_front->placementItemFor("p1")->isVisible());
+
+	stack->redo();
+	QVERIFY(!m_doc->placements[0]->visible);
+}
+
+void TestCommands::setWireVisibleUndoRedo() {
+	m_doc->wires.append(makeWire("w1", WireLayer::FrontBare));
+	m_front->syncWires();
+	QVERIFY(m_doc->wires[0]->visible);
+	QVERIFY(m_front->wireItemFor("w1")->isVisible());
+
+	auto *stack = m_doc->undoStack();
+	stack->push(new SetWireVisibleCommand(m_ctx.get(), "w1", true, false));
+	QVERIFY(!m_doc->wires[0]->visible);
+	QVERIFY(!m_front->wireItemFor("w1")->isVisible());
+
+	stack->undo();
+	QVERIFY(m_doc->wires[0]->visible);
+	QVERIFY(m_front->wireItemFor("w1")->isVisible());
 }
 
 void TestCommands::addWireUndoRedo() {

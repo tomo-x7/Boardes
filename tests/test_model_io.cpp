@@ -1,12 +1,14 @@
 #include <QBuffer>
 #include <QDir>
 #include <QImage>
+#include <QJsonArray>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 
 #include "io/boardio.h"
 #include "io/documentio.h"
+#include "io/jsonutil.h"
 #include "io/libraryio.h"
 #include "io/partio.h"
 #include "io/zipio.h"
@@ -38,6 +40,10 @@ Part makeTestPart() {
 		Pin{1, QPoint(0, 0), 0, QString()},
 		Pin{2, QPoint(3, 1), 9, QString()},
 	};
+	// 明示的な基準点 (anchor) 付き。Phase 11 で追加したフィールドのラウンドトリップを
+	// 他のテスト (embedded/sidecar/document/library) すべてに乗せて検証する。
+	part.anchor = QPoint(3, 1);
+	part.anchorExplicit = true;
 	return part;
 }
 
@@ -50,6 +56,7 @@ bool partsEqual(const Part &a, const Part &b) {
 	if (a.keywords != b.keywords) return false;
 	if (a.kind != b.kind || a.refPrefix != b.refPrefix) return false;
 	if (a.outline != b.outline) return false;
+	if (a.anchor != b.anchor || a.anchorExplicit != b.anchorExplicit) return false;
 	if (a.pins.size() != b.pins.size()) return false;
 	for (int i = 0; i < a.pins.size(); ++i) {
 		if (a.pins[i].number != b.pins[i].number) return false;
@@ -85,6 +92,31 @@ BoardSpec makeTestBoard() {
 	return board;
 }
 
+// Phase 17: バリデーションテスト用に、部品1個・配線1本を持つ最小限の正常なドキュメント
+// JSON を作る。各テストはこれを起点にフィールドを1箇所だけ壊して検証する。
+QJsonObject makeValidDocumentJson() {
+	Document doc;
+	doc.title = QStringLiteral("バリデーションテスト");
+	doc.board = makeTestBoard();
+
+	Placement placement;
+	placement.uuid = QStringLiteral("11111111-1111-1111-1111-111111111111");
+	placement.libraryId = QStringLiteral("pass-compat");
+	placement.partId = QStringLiteral("R-2");
+	placement.pos = QPoint(0, 0);
+	placement.rot = Rotation::R0;
+	placement.side = Side::Front;
+	doc.placements.append(std::make_shared<Placement>(placement));
+
+	Wire wire;
+	wire.uuid = QStringLiteral("22222222-2222-2222-2222-222222222222");
+	wire.layer = WireLayer::FrontBare;
+	wire.points = {QPoint(0, 0), QPoint(10, 0)};
+	doc.wires.append(std::make_shared<Wire>(wire));
+
+	return documentio::toJsonObject(doc);
+}
+
 }  // namespace
 
 class TestModelIo : public QObject {
@@ -94,8 +126,18 @@ private slots:
 	void partEmbeddedRoundTrip();
 	void partSidecarRoundTrip();
 	void partEncodingsAreEquivalent();
+	void partValidationRejectsUnknownArtworkEncoding();
+	void partValidationRejectsMissingSidecarImage();
 	void boardRoundTrip();
+	void boardValidationRejectsInvalidColor();
+	void boardValidationRejectsBrokenBackgroundBase64();
 	void documentRoundTrip();
+	void documentValidationRejectsTruncatedJson();
+	void documentValidationRejectsInvalidRotation();
+	void documentValidationRejectsDuplicatePlacementUuid();
+	void documentValidationRejectsShortWire();
+	void documentValidationRejectsFutureSchemaVersion();
+	void documentValidationRejectsNonObjectBoard();
 	void libraryDirectoryRoundTrip();
 	void libraryBlibRoundTrip();
 	void zipRoundTripWithUnicodeName();
@@ -142,6 +184,33 @@ void TestModelIo::partEncodingsAreEquivalent() {
 	QVERIFY(partsEqual(*embedded, *sidecar));
 }
 
+void TestModelIo::partValidationRejectsUnknownArtworkEncoding() {
+	const Part original = makeTestPart();
+	QJsonObject obj = partio::toJsonObject(original, /*embedBase64=*/true);
+	QJsonObject artwork = obj["artwork"].toObject();
+	artwork["encoding"] = QStringLiteral("weird");
+	obj["artwork"] = artwork;
+
+	const LoadResult result = partio::validateJson(obj, QStringLiteral("part"));
+	QVERIFY(!result.ok);
+	QVERIFY2(result.detail.contains(QStringLiteral("encoding")), qPrintable(result.detail));
+}
+
+void TestModelIo::partValidationRejectsMissingSidecarImage() {
+	const Part original = makeTestPart();
+	QTemporaryDir dir;
+	QVERIFY(dir.isValid());
+	const QString jsonPath = dir.filePath("R-2.part.json");
+	QVERIFY(partio::saveSidecar(original, jsonPath));
+	// サイドカー画像だけを消す (part.json 自体は正しい形式のまま)。
+	QVERIFY(QFile::remove(dir.filePath("R-2.png")));
+
+	LoadResult result;
+	const auto loaded = partio::loadSidecar(jsonPath, &result);
+	QVERIFY(!loaded.has_value());
+	QVERIFY(!result.ok);
+}
+
 void TestModelIo::boardRoundTrip() {
 	const BoardSpec original = makeTestBoard();
 	const QJsonObject obj = boardio::toJsonObject(original);
@@ -165,6 +234,32 @@ void TestModelIo::boardRoundTrip() {
 	QVERIFY(restored.backgroundFront.has_value());
 	QVERIFY(imagesEqual(restored.backgroundFront->image, original.backgroundFront->image));
 	QCOMPARE(restored.outlineRect, original.outlineRect);
+}
+
+void TestModelIo::boardValidationRejectsInvalidColor() {
+	const BoardSpec board = makeTestBoard();
+	QJsonObject obj = boardio::toJsonObject(board);
+	QJsonObject colors = obj["colors"].toObject();
+	colors["substrate"] = QStringLiteral("not-a-color");
+	obj["colors"] = colors;
+
+	const LoadResult result = boardio::validateJson(obj, QStringLiteral("board"));
+	QVERIFY(!result.ok);
+	QVERIFY2(result.detail.contains(QStringLiteral("colors")), qPrintable(result.detail));
+}
+
+void TestModelIo::boardValidationRejectsBrokenBackgroundBase64() {
+	const BoardSpec board = makeTestBoard();
+	QJsonObject obj = boardio::toJsonObject(board);
+	QJsonObject bg = obj["background"].toObject();
+	QJsonObject front = bg["front"].toObject();
+	front["data"] = QStringLiteral("!!!not valid base64!!!");
+	bg["front"] = front;
+	obj["background"] = bg;
+
+	const LoadResult result = boardio::validateJson(obj, QStringLiteral("board"));
+	QVERIFY(!result.ok);
+	QVERIFY2(result.detail.contains(QStringLiteral("background")), qPrintable(result.detail));
 }
 
 void TestModelIo::documentRoundTrip() {
@@ -214,15 +309,99 @@ void TestModelIo::documentRoundTrip() {
 	QCOMPARE(static_cast<int>(loaded.wires[0]->layer), static_cast<int>(WireLayer::BackBare));
 }
 
+void TestModelIo::documentValidationRejectsTruncatedJson() {
+	QTemporaryDir dir;
+	QVERIFY(dir.isValid());
+	const QString path = dir.filePath("broken.boardes");
+	QFile f(path);
+	QVERIFY(f.open(QIODevice::WriteOnly));
+	// 意図的に途中で切れた JSON。
+	f.write("{ \"schema\": \"boardes.document/1\", \"board\": {");
+	f.close();
+
+	Document doc;
+	const LoadResult result = documentio::load(path, doc);
+	QVERIFY(!result.ok);
+	QVERIFY(!result.detail.isEmpty());
+}
+
+void TestModelIo::documentValidationRejectsInvalidRotation() {
+	QJsonObject obj = makeValidDocumentJson();
+	QJsonArray placements = obj["placements"].toArray();
+	QJsonObject p0 = placements[0].toObject();
+	p0["rot"] = 45;
+	placements[0] = p0;
+	obj["placements"] = placements;
+
+	Document loaded;
+	const LoadResult result = documentio::validateAndLoad(obj, loaded);
+	QVERIFY(!result.ok);
+	QVERIFY2(result.detail.contains(QStringLiteral("rot")), qPrintable(result.detail));
+}
+
+void TestModelIo::documentValidationRejectsDuplicatePlacementUuid() {
+	QJsonObject obj = makeValidDocumentJson();
+	QJsonArray placements = obj["placements"].toArray();
+	QJsonObject dup = placements[0].toObject();
+	placements.append(dup);  // 同じ uuid をもう1件追加する
+	obj["placements"] = placements;
+
+	Document loaded;
+	const LoadResult result = documentio::validateAndLoad(obj, loaded);
+	QVERIFY(!result.ok);
+	QVERIFY2(result.detail.contains(QStringLiteral("重複")), qPrintable(result.detail));
+}
+
+void TestModelIo::documentValidationRejectsShortWire() {
+	QJsonObject obj = makeValidDocumentJson();
+	QJsonArray wires = obj["wires"].toArray();
+	QJsonObject w0 = wires[0].toObject();
+	QJsonArray onePoint;
+	onePoint.append(jsonutil::fromPoint(QPoint(0, 0)));
+	w0["points"] = onePoint;
+	wires[0] = w0;
+	obj["wires"] = wires;
+
+	Document loaded;
+	const LoadResult result = documentio::validateAndLoad(obj, loaded);
+	QVERIFY(!result.ok);
+	QVERIFY2(result.detail.contains(QStringLiteral("points")), qPrintable(result.detail));
+}
+
+void TestModelIo::documentValidationRejectsFutureSchemaVersion() {
+	QJsonObject obj = makeValidDocumentJson();
+	obj["schema"] = QStringLiteral("boardes.document/99");
+
+	Document loaded;
+	const LoadResult result = documentio::validateAndLoad(obj, loaded);
+	QVERIFY(!result.ok);
+	QVERIFY2(result.summary.contains(QStringLiteral("新しい")), qPrintable(result.summary));
+}
+
+void TestModelIo::documentValidationRejectsNonObjectBoard() {
+	QJsonObject obj = makeValidDocumentJson();
+	obj["board"] = QJsonArray();
+
+	Document loaded;
+	const LoadResult result = documentio::validateAndLoad(obj, loaded);
+	QVERIFY(!result.ok);
+	QVERIFY2(result.detail.contains(QStringLiteral("board")), qPrintable(result.detail));
+}
+
 void TestModelIo::libraryDirectoryRoundTrip() {
 	Library lib;
 	lib.id = QStringLiteral("my-library");
 	lib.name = QStringLiteral("マイライブラリ");
 	lib.version = QStringLiteral("1.0.0");
 	lib.author = QStringLiteral("tomo-x");
-	lib.license.kind = LicenseKind::CC_BY_SA_4_0;
+	lib.license.kind = LicenseKind::CC_BY_4_0;
 	lib.redistribution = redistributionRuleFor(lib.license.kind);
-	lib.readOnly = false;
+	BasedOn based;
+	based.libraryId = QStringLiteral("upstream-lib");
+	based.name = QStringLiteral("上流ライブラリ");
+	based.version = QStringLiteral("0.9.0");
+	based.licenseLabel = QStringLiteral("MIT License");
+	lib.basedOn.append(based);
 
 	CategoryInfo cat;
 	cat.id = QStringLiteral("R");
@@ -248,8 +427,9 @@ void TestModelIo::libraryDirectoryRoundTrip() {
 	QCOMPARE(loaded->name, lib.name);
 	QCOMPARE(static_cast<int>(loaded->license.kind), static_cast<int>(lib.license.kind));
 	QCOMPARE(loaded->redistribution.allowed, lib.redistribution.allowed);
-	QCOMPARE(static_cast<int>(loaded->redistribution.derivativePolicy),
-			 static_cast<int>(lib.redistribution.derivativePolicy));
+	QCOMPARE(loaded->redistribution.attributionRequired, lib.redistribution.attributionRequired);
+	QCOMPARE(loaded->basedOn.size(), 1);
+	QCOMPARE(loaded->basedOn[0].libraryId, based.libraryId);
 	QCOMPARE(loaded->categories.size(), 1);
 	QVERIFY(!loaded->categories[0].icon.isNull());
 	QCOMPARE(loaded->parts.size(), 1);
@@ -344,7 +524,9 @@ void TestModelIo::documentPackageExportSkipsNonRedistributable() {
 	QTemporaryDir dir;
 	QVERIFY(dir.isValid());
 	const QString bpkgPath = dir.filePath("test.bpkg");
-	const auto result = documentio::exportPackage(doc, resolver, bpkgPath);
+	// pass-compat は含めない (再配布不可のためユーザーが同梱を選ばなかった想定)。
+	const QSet<QString> includeIds = {QStringLiteral("cc0-lib")};
+	const auto result = documentio::exportPackage(doc, resolver, includeIds, bpkgPath);
 	QVERIFY2(result.ok, qPrintable(result.error));
 	QCOMPARE(result.bundledLibraryIds.size(), 1);
 	QCOMPARE(result.bundledLibraryIds[0], QStringLiteral("cc0-lib"));

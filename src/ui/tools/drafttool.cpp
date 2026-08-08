@@ -4,6 +4,7 @@
 
 #include "../../render/boardscene.h"
 #include "../../render/items/overlayitem.h"
+#include "../input/keymap.h"
 
 void DraftTool::deactivate() {
 	if (m_activeScene) {
@@ -14,11 +15,12 @@ void DraftTool::deactivate() {
 }
 
 bool DraftTool::mousePress(BoardScene *scene, QGraphicsSceneMouseEvent *event) {
-	if (event->button() != Qt::LeftButton) {
+	if (!m_context->keymapOrDefault().matchesMouseButton(QStringLiteral("draft.stroke"), event->button(),
+														  event->modifiers(), InputKind::MouseDrag)) {
 		return false;
 	}
 	m_activeScene = scene;
-	m_currentStroke = {event->scenePos()};
+	m_currentStroke = {scene->toModel(event->scenePos())};
 	scene->overlay()->setLiveDraftStroke(m_currentStroke);
 	return true;
 }
@@ -27,7 +29,7 @@ bool DraftTool::mouseMove(BoardScene *scene, QGraphicsSceneMouseEvent *event) {
 	if (!m_activeScene || scene != m_activeScene || m_currentStroke.isEmpty()) {
 		return false;
 	}
-	m_currentStroke.append(event->scenePos());
+	m_currentStroke.append(scene->toModel(event->scenePos()));
 	scene->overlay()->setLiveDraftStroke(m_currentStroke);
 	return true;
 }
@@ -36,7 +38,8 @@ bool DraftTool::mouseRelease(BoardScene *scene, QGraphicsSceneMouseEvent *event)
 	if (!m_activeScene || scene != m_activeScene) {
 		return false;
 	}
-	if (event->button() == Qt::LeftButton) {
+	if (m_context->keymapOrDefault().matchesMouseButton(QStringLiteral("draft.stroke"), event->button(),
+														 event->modifiers(), InputKind::MouseDrag)) {
 		scene->overlay()->addDraftStroke(m_currentStroke);
 		scene->overlay()->clearLiveDraftStroke();
 		m_currentStroke.clear();
@@ -46,6 +49,18 @@ bool DraftTool::mouseRelease(BoardScene *scene, QGraphicsSceneMouseEvent *event)
 	return false;
 }
 
-QString DraftTool::statusHint() const {
-	return QObject::tr("ドラッグでフリーハンドの下書き (保存されません)");
+bool DraftTool::cancel() {
+	if (m_currentStroke.isEmpty() && !m_activeScene) {
+		return false;
+	}
+	if (m_activeScene) {
+		m_activeScene->overlay()->clearLiveDraftStroke();
+	}
+	m_activeScene = nullptr;
+	m_currentStroke.clear();
+	return true;
+}
+
+QString DraftTool::statusHint(const Keymap &keymap) const {
+	return QObject::tr("%1でフリーハンドの下書き (保存されません)").arg(keymap.displayFor(QStringLiteral("draft.stroke")));
 }

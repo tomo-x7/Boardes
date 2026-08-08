@@ -27,15 +27,6 @@
     <property name="title">
      <string>ファイル(&amp;F)</string>
     </property>
-    <widget class="QMenu" name="menuImport">
-     <property name="title">
-      <string>インポート(&amp;I)</string>
-     </property>
-     <addaction name="importPassAction"/>
-     <addaction name="separator"/>
-     <addaction name="importPartFileAction"/>
-     <addaction name="importBoardFileAction"/>
-    </widget>
     <widget class="QMenu" name="menuExport">
      <property name="title">
       <string>エクスポート(&amp;E)</string>
@@ -56,7 +47,6 @@
     <addaction name="saveAction"/>
     <addaction name="saveAsAction"/>
     <addaction name="separator"/>
-    <addaction name="menuImport"/>
     <addaction name="menuExport"/>
     <addaction name="separator"/>
     <addaction name="menuRecentFiles"/>
@@ -77,9 +67,6 @@
     <property name="title">
      <string>ライブラリ(&amp;L)</string>
     </property>
-    <addaction name="createBoardAction"/>
-    <addaction name="createPartAction"/>
-    <addaction name="separator"/>
     <addaction name="manageLibrariesAction"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
@@ -135,31 +122,6 @@
   <action name="aboutAction">
    <property name="text">
     <string>Boardesについて(&amp;A)</string>
-   </property>
-  </action>
-  <action name="importPassAction">
-   <property name="text">
-    <string>PasS パーツフォルダ...</string>
-   </property>
-  </action>
-  <action name="importPartFileAction">
-   <property name="text">
-    <string>部品ファイル (.bpart/.part.json)...</string>
-   </property>
-  </action>
-  <action name="importBoardFileAction">
-   <property name="text">
-    <string>基板ファイル (.bboard)...</string>
-   </property>
-  </action>
-  <action name="createBoardAction">
-   <property name="text">
-    <string>新しい基板を作成...(&amp;B)</string>
-   </property>
-  </action>
-  <action name="createPartAction">
-   <property name="text">
-    <string>新しい部品を作成...(&amp;P)</string>
    </property>
   </action>
   <action name="manageLibrariesAction">

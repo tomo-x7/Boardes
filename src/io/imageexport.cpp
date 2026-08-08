@@ -43,9 +43,11 @@ QImage renderToImage(BoardScene *scene, const Options &options) {
 	}
 	SelectionGuard guard(scene);
 
-	const QRectF sceneRect = scene->sceneRect();
-	const QSize sizePx(qMax(1, qRound(sceneRect.width() * options.scale)),
-					   qMax(1, qRound(sceneRect.height() * options.scale)));
+	// sceneRect() はパン用の余白を含む (BoardScene::syncBoard() 参照) ので、書き出しには
+	// 余白なしの基板外形 (boardRect()) を使う。
+	const QRectF exportRect = scene->boardRect();
+	const QSize sizePx(qMax(1, qRound(exportRect.width() * options.scale)),
+					   qMax(1, qRound(exportRect.height() * options.scale)));
 
 	QImage img(sizePx, QImage::Format_ARGB32_Premultiplied);
 	img.fill(options.transparentBackground ? Qt::transparent : Qt::white);
@@ -53,7 +55,7 @@ QImage renderToImage(BoardScene *scene, const Options &options) {
 	QPainter painter(&img);
 	painter.setRenderHint(QPainter::Antialiasing, true);
 	painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-	scene->render(&painter, QRectF(QPointF(0, 0), QSizeF(sizePx)), sceneRect);
+	scene->render(&painter, QRectF(QPointF(0, 0), QSizeF(sizePx)), exportRect);
 	painter.end();
 	return img;
 }
@@ -108,8 +110,8 @@ bool saveAsSvg(BoardScene *front, BoardScene *back, const Options &options, cons
 		return false;
 	}
 
-	const QRectF frontRect = front ? front->sceneRect() : QRectF();
-	const QRectF backRect = back ? back->sceneRect() : QRectF();
+	const QRectF frontRect = front ? front->boardRect() : QRectF();
+	const QRectF backRect = back ? back->boardRect() : QRectF();
 	constexpr qreal kGap = 8.0;
 
 	QSizeF logicalSize;

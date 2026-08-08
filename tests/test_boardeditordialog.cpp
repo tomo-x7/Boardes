@@ -1,8 +1,27 @@
+#include <QApplication>
+#include <QDialogButtonBox>
 #include <QImage>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QRadioButton>
 #include <QTest>
+#include <QTimer>
 
 #include "core/units.h"
 #include "ui/boardeditordialog.h"
+
+namespace {
+// 「画像から作る」/「パラメトリック」ラジオボタンはダイアログの private メンバなので、
+// テストからはテキストで名前引きする。
+QRadioButton *radioWithText(const QDialog &dialog, const QString &text) {
+	for (QRadioButton *r : dialog.findChildren<QRadioButton *>()) {
+		if (r->text() == text) {
+			return r;
+		}
+	}
+	return nullptr;
+}
+}  // namespace
 
 class TestBoardEditorDialog : public QObject {
 	Q_OBJECT
@@ -13,6 +32,9 @@ private slots:
 	void sizeIsDerivedFromGridParameters();
 	void backgroundImageRoundTripsAndDrivesSize();
 	void clearingBackgroundImageRevertsToGridDerivedSize();
+	void imageModeForcesParametricFieldsToDefaults();
+	void creatingWithoutFrontImageInImageModeIsRejected();
+	void titleAndOkButtonReflectCreateVsEditMode();
 
 private:
 	static BoardSpec makeSampleBoard();
@@ -126,6 +148,63 @@ void TestBoardEditorDialog::clearingBackgroundImageRevertsToGridDerivedSize() {
 	const BoardSpec result = dialog.board();
 	QVERIFY(!result.backgroundFront.has_value());
 	QCOMPARE(result.size, QSize(2 * 5 + (8 - 1) * 10, 2 * 5 + (6 - 1) * 10));
+}
+
+void TestBoardEditorDialog::imageModeForcesParametricFieldsToDefaults() {
+	BoardEditorDialog dialog;
+	dialog.setBoard(makeSampleBoard());  // 画像なしなのでパラメトリックモードになる
+	QCOMPARE(static_cast<int>(dialog.board().padShape), static_cast<int>(PadShape::Square));  // 前提の確認
+
+	auto *imageModeRadio = radioWithText(dialog, QStringLiteral("画像から作る"));
+	QVERIFY(imageModeRadio != nullptr);
+	imageModeRadio->setChecked(true);
+
+	// 画像モードに切り替えると、パッド形状・銅箔パターン・両面・色は既定値に強制される
+	// (背景画像がすべての見た目を担うため)。
+	const BoardSpec result = dialog.board();
+	QCOMPARE(static_cast<int>(result.padShape), static_cast<int>(PadShape::None));
+	QCOMPARE(static_cast<int>(result.copper), static_cast<int>(CopperPattern::None));
+	QVERIFY(!result.doubleSided);
+	QCOMPARE(result.substrateColor, boarddefaults::Substrate);
+	QCOMPARE(result.padColor, boarddefaults::Pad);
+	QCOMPARE(result.copperColor, boarddefaults::Copper);
+}
+
+void TestBoardEditorDialog::creatingWithoutFrontImageInImageModeIsRejected() {
+	BoardEditorDialog dialog;
+	auto *idEdit = dialog.findChild<QLineEdit *>();
+	QVERIFY(idEdit != nullptr);
+	// 1つ目の QLineEdit は ID 欄 (コンストラクタでの追加順)。
+	idEdit->setText(QStringLiteral("no-image-board"));
+	auto lineEdits = dialog.findChildren<QLineEdit *>();
+	QVERIFY(lineEdits.size() >= 2);
+	lineEdits[1]->setText(QStringLiteral("画像なし基板"));  // 名前欄
+
+	auto *imageModeRadio = radioWithText(dialog, QStringLiteral("画像から作る"));
+	QVERIFY(imageModeRadio != nullptr);
+	imageModeRadio->setChecked(true);
+
+	// onAccept() は検証に失敗すると QMessageBox::warning (モーダル) を出す。
+	// テストでは自動的に閉じる。
+	QTimer::singleShot(0, [] {
+		if (QWidget *modal = QApplication::activeModalWidget()) {
+			modal->close();
+		}
+	});
+	QMetaObject::invokeMethod(&dialog, "onAccept", Qt::DirectConnection);
+	QVERIFY(dialog.result() != QDialog::Accepted);
+}
+
+void TestBoardEditorDialog::titleAndOkButtonReflectCreateVsEditMode() {
+	BoardEditorDialog dialog;
+	auto *okButton = dialog.findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok);
+	QVERIFY(okButton != nullptr);
+	QCOMPARE(dialog.windowTitle(), QStringLiteral("基板を作成"));
+	QCOMPARE(okButton->text(), QStringLiteral("作成"));
+
+	dialog.setBoard(makeSampleBoard());
+	QCOMPARE(dialog.windowTitle(), QStringLiteral("基板を編集"));
+	QCOMPARE(okButton->text(), QStringLiteral("保存"));
 }
 
 QTEST_MAIN(TestBoardEditorDialog)

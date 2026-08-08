@@ -1,5 +1,6 @@
 #include "placementitem.h"
 
+#include <QGraphicsSceneHoverEvent>
 #include <QPainter>
 
 #include "../../model/librarymanager.h"
@@ -12,7 +13,9 @@ PlacementItem::PlacementItem(std::shared_ptr<const Placement> placement, Library
 	  m_viewSide(viewSide) {
 	setPos(m_placement->pos);
 	setZValue(m_placement->z);
+	setVisible(m_placement->visible);
 	setFlag(QGraphicsItem::ItemIsSelectable, true);
+	setAcceptHoverEvents(true);
 }
 
 QSize PlacementItem::rotatedSizeOrDefault() const {
@@ -70,13 +73,32 @@ void PlacementItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, Q
 		}
 	}
 
+	// 接点マーカー: どちらの面から見ていても、全ピン位置に丸を重ねる。PasS 部品は
+	// 赤いマーカー画素をそのままアートワークに残しているので (Phase 13)、ここで
+	// 同じ位置にさらに丸が重なる形になる。独自部品でも同じ表示ができる。
+	if (m_pinMarkersVisible) {
+		painter->setPen(Qt::NoPen);
+		painter->setBrush(m_pinMarkerColor);
+		const qreal r = m_pinMarkerDiameter / 2.0;
+		for (const auto &pin : part->pins) {
+			const QPoint rp = rotatePoint(pin.pos, partSize, m_placement->rot);
+			painter->drawEllipse(QPointF(rp), r, r);
+		}
+	}
+
 	if (m_showPinNumbers) {
 		painter->save();
-		// 裏面シーンはシーンのルートで水平反転されているため、ここで局所的に打ち消して
-		// 文字が鏡文字にならないようにする (LabelItem と同じ考え方)。
-		if (m_viewSide == Side::Back) {
+		// 裏面シーンは (BackViewMode に応じて) 水平/垂直反転されているため、ここで
+		// 局所的に打ち消して文字が鏡文字にならないようにする (LabelItem と同じ考え方)。
+		// 打ち消し変換自体が位置もずらしてしまうので、描画位置 (lx/ly) 側でも
+		// 同じ分だけ逆補正して元の (鏡像の) スクリーン位置に戻す。
+		if (m_textFlipX) {
 			painter->translate(rect.width(), 0);
 			painter->scale(-1, 1);
+		}
+		if (m_textFlipY) {
+			painter->translate(0, rect.height());
+			painter->scale(1, -1);
 		}
 		QFont f = painter->font();
 		f.setPixelSize(3);
@@ -87,17 +109,54 @@ void PlacementItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, Q
 				continue;
 			}
 			const QPoint rp = rotatePoint(pin.pos, partSize, m_placement->rot);
-			const qreal lx = (m_viewSide == Side::Back) ? (rect.width() - rp.x()) : rp.x();
-			painter->drawText(QPointF(lx + 0.5, rp.y() - 0.5), QString::number(pin.number));
+			const qreal lx = m_textFlipX ? (rect.width() - rp.x()) : rp.x();
+			const qreal ly = m_textFlipY ? (rect.height() - rp.y()) : rp.y();
+			painter->drawText(QPointF(lx + 0.5, ly - 0.5), QString::number(pin.number));
 		}
 		painter->restore();
 	}
+
+	// 選択・ホバーの可視化。画面上で一定の太さになるよう、現在の描画スケールの
+	// 逆数を掛けた「デバイス非依存の1px」単位 (px) でペン幅を決める。
+	const qreal px = 1.0 / qMax(0.001, qAbs(painter->transform().m11()));
+	if (isSelected()) {
+		painter->setBrush(QColor(0, 200, 255, 50));
+		painter->setPen(QPen(Qt::black, 3 * px));
+		painter->drawRect(rect);
+		painter->setBrush(Qt::NoBrush);
+		painter->setPen(QPen(QColor(0, 220, 255), 1.5 * px, Qt::DashLine));
+		painter->drawRect(rect);
+		// 四隅のハンドル。
+		painter->setPen(Qt::NoPen);
+		painter->setBrush(Qt::black);
+		const qreal hs = 4 * px;
+		for (const QPointF &corner : {rect.topLeft(), rect.topRight(), rect.bottomLeft(), rect.bottomRight()}) {
+			painter->drawRect(QRectF(corner.x() - hs / 2, corner.y() - hs / 2, hs, hs));
+		}
+	} else if (m_hovered) {
+		painter->setBrush(Qt::NoBrush);
+		painter->setPen(QPen(QColor(0, 200, 255, 160), 1.5 * px));
+		painter->drawRect(rect);
+	}
+}
+
+void PlacementItem::hoverEnterEvent(QGraphicsSceneHoverEvent *event) {
+	QGraphicsItem::hoverEnterEvent(event);
+	m_hovered = true;
+	update();
+}
+
+void PlacementItem::hoverLeaveEvent(QGraphicsSceneHoverEvent *event) {
+	QGraphicsItem::hoverLeaveEvent(event);
+	m_hovered = false;
+	update();
 }
 
 void PlacementItem::refresh() {
 	prepareGeometryChange();
 	setPos(m_placement->pos);
 	setZValue(m_placement->z);
+	setVisible(m_placement->visible);
 	update();
 }
 
@@ -114,5 +173,21 @@ void PlacementItem::setForceOutline(bool force) {
 		return;
 	}
 	m_forceOutline = force;
+	update();
+}
+
+void PlacementItem::setTextFlip(bool flipX, bool flipY) {
+	if (m_textFlipX == flipX && m_textFlipY == flipY) {
+		return;
+	}
+	m_textFlipX = flipX;
+	m_textFlipY = flipY;
+	update();
+}
+
+void PlacementItem::setPinMarkers(bool visible, QColor color, qreal diameterUnits) {
+	m_pinMarkersVisible = visible;
+	m_pinMarkerColor = color;
+	m_pinMarkerDiameter = diameterUnits;
 	update();
 }

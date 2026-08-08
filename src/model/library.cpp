@@ -6,18 +6,8 @@ QString licenseSpdxId(LicenseKind kind) {
 		return QStringLiteral("CC0-1.0");
 	case LicenseKind::CC_BY_4_0:
 		return QStringLiteral("CC-BY-4.0");
-	case LicenseKind::CC_BY_SA_4_0:
-		return QStringLiteral("CC-BY-SA-4.0");
-	case LicenseKind::CC_BY_NC_4_0:
-		return QStringLiteral("CC-BY-NC-4.0");
 	case LicenseKind::MIT:
 		return QStringLiteral("MIT");
-	case LicenseKind::Apache_2_0:
-		return QStringLiteral("Apache-2.0");
-	case LicenseKind::CERN_OHL_P:
-		return QStringLiteral("CERN-OHL-P-2.0");
-	case LicenseKind::CERN_OHL_S:
-		return QStringLiteral("CERN-OHL-S-2.0");
 	case LicenseKind::AllRightsReserved:
 	case LicenseKind::Custom:
 	default:
@@ -28,39 +18,26 @@ QString licenseSpdxId(LicenseKind kind) {
 QString licenseDisplayName(LicenseKind kind) {
 	switch (kind) {
 	case LicenseKind::CC0_1_0:
-		return QStringLiteral("CC0 1.0 (パブリックドメイン相当)");
+		return QStringLiteral("CC0 1.0 (権利放棄・自由に利用可)");
 	case LicenseKind::CC_BY_4_0:
-		return QStringLiteral("CC BY 4.0 (表示)");
-	case LicenseKind::CC_BY_SA_4_0:
-		return QStringLiteral("CC BY-SA 4.0 (表示-継承)");
-	case LicenseKind::CC_BY_NC_4_0:
-		return QStringLiteral("CC BY-NC 4.0 (表示-非営利)");
+		return QStringLiteral("CC BY 4.0 (表示すれば自由に利用可)");
 	case LicenseKind::MIT:
 		return QStringLiteral("MIT License");
-	case LicenseKind::Apache_2_0:
-		return QStringLiteral("Apache License 2.0");
-	case LicenseKind::CERN_OHL_P:
-		return QStringLiteral("CERN-OHL-P-2.0 (Permissive)");
-	case LicenseKind::CERN_OHL_S:
-		return QStringLiteral("CERN-OHL-S-2.0 (Strongly Reciprocal)");
 	case LicenseKind::AllRightsReserved:
-		return QStringLiteral("全権利留保");
+		return QStringLiteral("全権利留保 (再配布不可)");
 	case LicenseKind::Custom:
 		return QStringLiteral("カスタム");
 	}
-	return QStringLiteral("全権利留保");
+	return QStringLiteral("全権利留保 (再配布不可)");
 }
 
 LicenseKind licenseKindFromSpdx(const QString &spdx) {
 	if (spdx == QStringLiteral("CC0-1.0")) return LicenseKind::CC0_1_0;
 	if (spdx == QStringLiteral("CC-BY-4.0")) return LicenseKind::CC_BY_4_0;
-	if (spdx == QStringLiteral("CC-BY-SA-4.0")) return LicenseKind::CC_BY_SA_4_0;
-	if (spdx == QStringLiteral("CC-BY-NC-4.0")) return LicenseKind::CC_BY_NC_4_0;
 	if (spdx == QStringLiteral("MIT")) return LicenseKind::MIT;
-	if (spdx == QStringLiteral("Apache-2.0")) return LicenseKind::Apache_2_0;
-	if (spdx == QStringLiteral("CERN-OHL-P-2.0")) return LicenseKind::CERN_OHL_P;
-	if (spdx == QStringLiteral("CERN-OHL-S-2.0")) return LicenseKind::CERN_OHL_S;
 	if (spdx.isEmpty()) return LicenseKind::AllRightsReserved;
+	// 廃止した種別 (CC-BY-SA-4.0 / CC-BY-NC-4.0 / Apache-2.0 / CERN-OHL-*) を含め、
+	// 未知の SPDX は Custom として扱う (呼び出し側が customName に元の文字列を残すこと)。
 	return LicenseKind::Custom;
 }
 
@@ -70,18 +47,8 @@ QString licenseKindToKey(LicenseKind kind) {
 		return QStringLiteral("cc0-1.0");
 	case LicenseKind::CC_BY_4_0:
 		return QStringLiteral("cc-by-4.0");
-	case LicenseKind::CC_BY_SA_4_0:
-		return QStringLiteral("cc-by-sa-4.0");
-	case LicenseKind::CC_BY_NC_4_0:
-		return QStringLiteral("cc-by-nc-4.0");
 	case LicenseKind::MIT:
 		return QStringLiteral("mit");
-	case LicenseKind::Apache_2_0:
-		return QStringLiteral("apache-2.0");
-	case LicenseKind::CERN_OHL_P:
-		return QStringLiteral("cern-ohl-p-2.0");
-	case LicenseKind::CERN_OHL_S:
-		return QStringLiteral("cern-ohl-s-2.0");
 	case LicenseKind::AllRightsReserved:
 		return QStringLiteral("all-rights-reserved");
 	case LicenseKind::Custom:
@@ -93,14 +60,14 @@ QString licenseKindToKey(LicenseKind kind) {
 LicenseKind licenseKindFromKey(const QString &key) {
 	if (key == QStringLiteral("cc0-1.0")) return LicenseKind::CC0_1_0;
 	if (key == QStringLiteral("cc-by-4.0")) return LicenseKind::CC_BY_4_0;
-	if (key == QStringLiteral("cc-by-sa-4.0")) return LicenseKind::CC_BY_SA_4_0;
-	if (key == QStringLiteral("cc-by-nc-4.0")) return LicenseKind::CC_BY_NC_4_0;
 	if (key == QStringLiteral("mit")) return LicenseKind::MIT;
-	if (key == QStringLiteral("apache-2.0")) return LicenseKind::Apache_2_0;
-	if (key == QStringLiteral("cern-ohl-p-2.0")) return LicenseKind::CERN_OHL_P;
-	if (key == QStringLiteral("cern-ohl-s-2.0")) return LicenseKind::CERN_OHL_S;
-	if (key == QStringLiteral("custom")) return LicenseKind::Custom;
-	return LicenseKind::AllRightsReserved;
+	if (key == QStringLiteral("all-rights-reserved") || key.isEmpty()) return LicenseKind::AllRightsReserved;
+	// "custom" はもちろん、廃止した種別のキー (cc-by-sa-4.0 / cc-by-nc-4.0 / apache-2.0 /
+	// cern-ohl-p-2.0 / cern-ohl-s-2.0 など) もここに来る。黙って全権利留保に落とすと
+	// 「再配布可能だったはずのライブラリが不可になる」という驚きになるので、
+	// Custom として保持する (呼び出し側 (libraryio.cpp) が既知の旧キーなら customName/
+	// customUrl を補完する)。
+	return LicenseKind::Custom;
 }
 
 RedistributionRule redistributionRuleFor(LicenseKind kind) {
@@ -109,33 +76,18 @@ RedistributionRule redistributionRuleFor(LicenseKind kind) {
 	case LicenseKind::CC0_1_0:
 		rule.allowed = true;
 		rule.attributionRequired = false;
-		rule.derivativePolicy = DerivativePolicy::Any;
 		break;
 	case LicenseKind::MIT:
-	case LicenseKind::Apache_2_0:
 	case LicenseKind::CC_BY_4_0:
-	case LicenseKind::CERN_OHL_P:
 		rule.allowed = true;
 		rule.attributionRequired = true;
-		rule.derivativePolicy = DerivativePolicy::Any;
-		break;
-	case LicenseKind::CC_BY_SA_4_0:
-	case LicenseKind::CERN_OHL_S:
-		rule.allowed = true;
-		rule.attributionRequired = true;
-		rule.derivativePolicy = DerivativePolicy::MustMatchSame;
-		break;
-	case LicenseKind::CC_BY_NC_4_0:
-		rule.allowed = true;
-		rule.attributionRequired = true;
-		rule.derivativePolicy = DerivativePolicy::NcFamilyOnly;
 		break;
 	case LicenseKind::AllRightsReserved:
 	case LicenseKind::Custom:
 	default:
+		// Custom は「手動指定」が原則だが、安全側の既定として不可にしておく。
 		rule.allowed = false;
 		rule.attributionRequired = false;
-		rule.derivativePolicy = DerivativePolicy::Any;
 		break;
 	}
 	return rule;

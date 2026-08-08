@@ -35,16 +35,11 @@ DuplicateLibraryDialog::DuplicateLibraryDialog(const Library &source, QWidget *p
 	m_versionEdit->setText(QStringLiteral("1.0.0"));
 
 	m_licensePicker = new LicensePickerWidget(this);
-	const RedistributionRule &rule = source.redistribution;
-	if (rule.allowed && rule.derivativePolicy == DerivativePolicy::MustMatchSame) {
-		m_licensePicker->setAllowedKinds({source.license.kind});
-	} else if (rule.allowed && rule.derivativePolicy == DerivativePolicy::NcFamilyOnly) {
-		m_licensePicker->setAllowedKinds({LicenseKind::CC_BY_NC_4_0, LicenseKind::Custom});
-	}
-	// rule.allowed==false (PasS互換など再配布不可の元) の場合は制限しない。複製物は
-	// 独立した創作物として利用者の責任で新しくライセンスを設定できる
-	// (LibraryManager::duplicateLibrary の既存仕様通り)。
+	// 派生ライセンスを元のライセンスに強制する仕組み (コピーレフト強制) は廃止した
+	// (Phase 14)。複製物のライセンスは常に自由に選べる — 尊重すべきは「元の再配布可否」
+	// までであり、複製物自身の公開・再配布可否は複製物自身のライセンスで決まる。
 	m_licensePicker->setLicense(source.license);
+	m_licensePicker->setRedistributionRule(source.redistribution);
 
 	auto *form = new QFormLayout();
 	form->addRow(tr("ID:"), m_idEdit);
@@ -71,6 +66,7 @@ LibraryManager::DuplicateSpec DuplicateLibraryDialog::spec() const {
 	s.newAuthor = m_authorEdit->text().trimmed();
 	s.newVersion = m_versionEdit->text().trimmed();
 	s.newLicense = m_licensePicker->license();
+	s.newRedistribution = m_licensePicker->redistributionRule();
 	return s;
 }
 

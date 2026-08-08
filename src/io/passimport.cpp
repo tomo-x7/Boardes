@@ -60,33 +60,6 @@ PartKind classifyKind(const QString &categoryId, const QString &baseName) {
 	return PartKind::Normal;
 }
 
-// 4近傍 (マーカー画素を除く) の最頻色を返す。近傍が全部マーカーなら chromaKey を返す。
-QColor neighborMajorityColor(const QImage &orig888, const QVector<bool> &markerMask, int w, int h, int x, int y,
-							 QColor chromaKey) {
-	static const int dx[4] = {1, -1, 0, 0};
-	static const int dy[4] = {0, 0, 1, -1};
-	QHash<QRgb, int> freq;
-	for (int k = 0; k < 4; ++k) {
-		const int nx = x + dx[k];
-		const int ny = y + dy[k];
-		if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-		if (markerMask[ny * w + nx]) continue;
-		freq[orig888.pixel(nx, ny)]++;
-	}
-	if (freq.isEmpty()) {
-		return chromaKey;
-	}
-	QRgb best = 0;
-	int bestCount = -1;
-	for (auto it = freq.constBegin(); it != freq.constEnd(); ++it) {
-		if (it.value() > bestCount) {
-			bestCount = it.value();
-			best = it.key();
-		}
-	}
-	return QColor(best);
-}
-
 std::optional<Part> importPartBmp(const QString &filePath, const QString &categoryId, QString *errorOut) {
 	QImage loaded;
 	if (!loaded.load(filePath)) {
@@ -102,7 +75,6 @@ std::optional<Part> importPartBmp(const QString &filePath, const QString &catego
 	}
 
 	QVector<Pin> pins;
-	QVector<bool> markerMask(w * h, false);
 
 	for (int y = 0; y < h; ++y) {
 		const uchar *line = src888.constScanLine(y);
@@ -116,22 +88,15 @@ std::optional<Part> importPartBmp(const QString &filePath, const QString &catego
 				pin.pos = QPoint(x, y);
 				pin.drill = b * 16 + g;
 				pins.append(pin);
-				markerMask[y * w + x] = true;
 			}
 		}
 	}
 
 	QImage argb = src888.convertToFormat(QImage::Format_ARGB32);
 
-	// マーカー画素を近傍色に置き換えてからクロマキーを適用する。
-	for (int y = 0; y < h; ++y) {
-		for (int x = 0; x < w; ++x) {
-			if (!markerMask[y * w + x]) continue;
-			const QColor replacement =
-				neighborMajorityColor(src888, markerMask, w, h, x, y, QColor(kChromaKeyRgb));
-			argb.setPixelColor(x, y, replacement);
-		}
-	}
+	// マーカー画素はあえて埋め戻さず、元の色 (赤系) のまま残す (Phase 13)。
+	// Boardes 側の「接点マーカー表示」機能 (BoardScene::setPinMarkers) が同じ位置に
+	// さらに丸を重ねる形で表示するので、PasS 部品では元のマーカーの上に重なって見える。
 	const QRgb chromaOpaque = kChromaKeyRgb | 0xFF000000u;
 	for (int y = 0; y < h; ++y) {
 		QRgb *line = reinterpret_cast<QRgb *>(argb.scanLine(y));

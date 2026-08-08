@@ -56,6 +56,20 @@ void BoardScene::setDocument(Document *document, LibraryManager *libraryManager)
 	syncWires();
 }
 
+namespace {
+QTransform backRootTransform(BackViewMode mode, QSize boardSize) {
+	switch (mode) {
+	case BackViewMode::Through:
+		return QTransform();
+	case BackViewMode::MirrorY:
+		return QTransform(1, 0, 0, -1, 0, boardSize.height());
+	case BackViewMode::MirrorX:
+	default:
+		return QTransform(-1, 0, 0, 1, boardSize.width(), 0);
+	}
+}
+}  // namespace
+
 void BoardScene::syncBoard() {
 	const BoardSpec *board = m_document ? &m_document->board : nullptr;
 	if (!m_boardItem) {
@@ -64,9 +78,40 @@ void BoardScene::syncBoard() {
 		m_boardItem->setBoard(board);
 	}
 	if (board) {
-		m_root->setTransform(m_side == Side::Back ? QTransform(-1, 0, 0, 1, board->size.width(), 0) : QTransform());
-		setSceneRect(QRectF(QPointF(0, 0), QSizeF(board->size)));
+		m_root->setTransform(m_side == Side::Back ? backRootTransform(m_backViewMode, board->size) : QTransform());
+		m_boardRect = QRectF(QPointF(0, 0), QSizeF(board->size));
+		// スクロール範囲は基板ぴったりだとパンできない (基板が画面に収まった時点で
+		// スクロールバーの可動域が0になる) ので、周囲に余白を持たせる (Phase 12)。
+		const qreal margin = qMax(200.0, qMax(board->size.width(), board->size.height()) * 0.5);
+		setSceneRect(m_boardRect.adjusted(-margin, -margin, margin, margin));
 	}
+}
+
+void BoardScene::setBackViewMode(BackViewMode mode) {
+	if (m_backViewMode == mode) {
+		return;
+	}
+	m_backViewMode = mode;
+	syncBoard();
+	syncLabels();
+	// ピン番号の反転もこのシーンの反転モードに依存するため反映し直す。
+	for (auto *item : std::as_const(m_placementItems)) {
+		item->setTextFlip(textFlipX(), textFlipY());
+	}
+}
+
+bool BoardScene::textFlipX() const {
+	if (m_side != Side::Back) {
+		return false;
+	}
+	return m_backViewMode == BackViewMode::MirrorX;
+}
+
+bool BoardScene::textFlipY() const {
+	if (m_side != Side::Back) {
+		return false;
+	}
+	return m_backViewMode == BackViewMode::MirrorY;
 }
 
 void BoardScene::syncPlacements() {
@@ -81,6 +126,8 @@ void BoardScene::syncPlacements() {
 			auto *item = new PlacementItem(p, m_libraryManager, m_side, m_root);
 			item->setShowPinNumbers(m_showPinNumbers);
 			item->setForceOutline(m_forceOutline);
+			item->setTextFlip(textFlipX(), textFlipY());
+			item->setPinMarkers(m_pinMarkersVisible, m_pinMarkerColor, m_pinMarkerDiameter);
 			m_placementItems.insert(p->uuid, item);
 		} else {
 			it.value()->refresh();
@@ -108,11 +155,11 @@ void BoardScene::syncLabels() {
 		LabelItem *item;
 		if (it == m_labelItems.end()) {
 			item = new LabelItem(m_root);
-			item->setCounterMirrored(m_side == Side::Back);
 			m_labelItems.insert(p->uuid, item);
 		} else {
 			item = it.value();
 		}
+		item->setCounterMirror(textFlipX(), textFlipY());
 		item->setTexts(p->refDes, p->value);
 
 		QSize sz(20, 20);
@@ -147,12 +194,16 @@ void BoardScene::syncWires() {
 		}
 		currentUuids.insert(w->uuid);
 		auto it = m_wireItems.find(w->uuid);
+		// 実際の表示可否は「レイヤ表示トグル」と「オブジェクト一覧の目玉トグル
+		// (w->visible)」の両方の AND。
+		const bool combinedVisible = m_layerVisible.value(static_cast<int>(w->layer), true) && w->visible;
 		if (it == m_wireItems.end()) {
 			auto *item = new WireItem(w, m_root);
-			item->setVisible(m_layerVisible.value(static_cast<int>(w->layer), true));
+			item->setVisible(combinedVisible);
 			m_wireItems.insert(w->uuid, item);
 		} else {
 			it.value()->refresh();
+			it.value()->setVisible(combinedVisible);
 		}
 	}
 	for (auto it = m_wireItems.begin(); it != m_wireItems.end();) {
@@ -188,13 +239,23 @@ void BoardScene::setLayerVisible(WireLayer layer, bool visible) {
 	m_layerVisible[static_cast<int>(layer)] = visible;
 	for (auto it = m_wireItems.constBegin(); it != m_wireItems.constEnd(); ++it) {
 		if (it.value()->wire()->layer == layer) {
-			it.value()->setVisible(visible);
+			// オブジェクト一覧の目玉トグルとの AND (Phase 15)。
+			it.value()->setVisible(visible && it.value()->wire()->visible);
 		}
 	}
 }
 
 bool BoardScene::isLayerVisible(WireLayer layer) const {
 	return m_layerVisible.value(static_cast<int>(layer), true);
+}
+
+void BoardScene::setPinMarkers(bool visible, QColor color, qreal diameterUnits) {
+	m_pinMarkersVisible = visible;
+	m_pinMarkerColor = color;
+	m_pinMarkerDiameter = diameterUnits;
+	for (auto *item : std::as_const(m_placementItems)) {
+		item->setPinMarkers(visible, color, diameterUnits);
+	}
 }
 
 // ツールが消費した場合は明示的に accept() する (BoardView 側や親ウィジェットへの

@@ -73,9 +73,19 @@ public:
 	QVector<Pin> pins;
 	QRect outline;  // アウトライン表示用の矩形 (単位系)。artwork のサイズと独立に持てる
 
+	// 部品画像内の基準点 (単位系)。配置・移動時はここが基板の格子点 (穴の中心) に
+	// 一致するようにスナップする。anchorExplicit が false のときは resolveAnchor() が
+	// 自動決定するので、この生の値を直接使わないこと。
+	QPoint anchor;
+	bool anchorExplicit = false;
+
 	QSize size() const {
 		return artwork.isNull() ? outline.size() : artwork.image.size();
 	}
+
+	// 実際に使う基準点。明示指定 (anchorExplicit) があればそれ、無ければ「番号が
+	// 最小のピン」の位置、ピンが1つも無ければ「画像の中心を格子刻みに丸めた点」。
+	QPoint resolveAnchor() const;
 
 	// キーワード検索 (部分一致、大小無視)。
 	bool matchesQuery(const QString &query) const;

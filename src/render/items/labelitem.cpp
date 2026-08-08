@@ -33,8 +33,12 @@ void LabelItem::recomputeBounds() {
 }
 
 void LabelItem::applyMirrorIfNeeded() {
-	if (m_counterMirrored) {
-		setTransform(QTransform(-1, 0, 0, 1, m_bounds.width(), 0));
+	const qreal sx = m_flipX ? -1 : 1;
+	const qreal sy = m_flipY ? -1 : 1;
+	const qreal dx = m_flipX ? m_bounds.width() : 0;
+	const qreal dy = m_flipY ? m_bounds.height() : 0;
+	if (m_flipX || m_flipY) {
+		setTransform(QTransform(sx, 0, 0, sy, dx, dy));
 	} else {
 		setTransform(QTransform());
 	}
@@ -71,10 +75,11 @@ void LabelItem::setAnchor(QPointF unitPos) {
 	setPos(unitPos);
 }
 
-void LabelItem::setCounterMirrored(bool on) {
-	if (m_counterMirrored == on) {
+void LabelItem::setCounterMirror(bool flipX, bool flipY) {
+	if (m_flipX == flipX && m_flipY == flipY) {
 		return;
 	}
-	m_counterMirrored = on;
+	m_flipX = flipX;
+	m_flipY = flipY;
 	applyMirrorIfNeeded();
 }

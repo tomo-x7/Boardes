@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "../model/part.h"
+#include "loadresult.h"
 
 // Part <-> JSON。
 //
@@ -29,14 +30,19 @@ Part fromJsonObject(const QJsonObject &obj, const ArtworkResolver &resolver);
 
 QString defaultArtworkFileName(const Part &part);
 
-// 単体ファイル I/O (アプリの「部品をエクスポート/インポート」機能用)。
+// obj の形式を検証する (JSON 構造のみ。サイドカー画像の実在・デコード可否は
+// 呼び出し側 (loadEmbedded/loadSidecar) が別途確認する)。
+LoadResult validateJson(const QJsonObject &obj, const QString &path);
+
+// 単体ファイル I/O (アプリの「部品をエクスポート/インポート」機能用)。失敗時、
+// errorOut が渡されていれば理由を書き込む。
 
 // .bpart: JSON 1ファイル、画像は base64 埋め込み。
 bool saveEmbedded(const Part &part, const QString &bpartFilePath);
-std::optional<Part> loadEmbedded(const QString &bpartFilePath);
+std::optional<Part> loadEmbedded(const QString &bpartFilePath, LoadResult *errorOut = nullptr);
 
 // <name>.part.json + サイドカー画像 (既定 <name>.png)。
 bool saveSidecar(const Part &part, const QString &jsonFilePath);
-std::optional<Part> loadSidecar(const QString &jsonFilePath);
+std::optional<Part> loadSidecar(const QString &jsonFilePath, LoadResult *errorOut = nullptr);
 
 }  // namespace partio

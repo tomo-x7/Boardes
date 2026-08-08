@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "../model/library.h"
+#include "loadresult.h"
 
 // Library のパッケージ形式 I/O。
 //
@@ -33,12 +34,16 @@ struct PackageSink {
 };
 
 bool writePackage(const Library &lib, const PackageSink &sink);
-std::optional<Library> readPackage(const PackageSource &source);
+// 失敗時、errorOut が渡されていれば理由を書き込む。参照先の .bpart/.bboard を
+// 1件でも読めなければ、ライブラリ全体を読み込み失敗として返す (Phase 17)。
+// 致命的ではない問題 (未知のカテゴリを参照する部品、デコードできないアイコン等) は
+// errorOut->warnings に積んだうえで読み込みは続行する。
+std::optional<Library> readPackage(const PackageSource &source, LoadResult *errorOut = nullptr);
 
 bool saveToDirectory(const Library &lib, const QString &dirPath);
-std::optional<Library> loadFromDirectory(const QString &dirPath);
+std::optional<Library> loadFromDirectory(const QString &dirPath, LoadResult *errorOut = nullptr);
 
 bool exportToBlib(const Library &lib, const QString &blibFilePath);
-std::optional<Library> importFromBlib(const QString &blibFilePath);
+std::optional<Library> importFromBlib(const QString &blibFilePath, LoadResult *errorOut = nullptr);
 
 }  // namespace libraryio

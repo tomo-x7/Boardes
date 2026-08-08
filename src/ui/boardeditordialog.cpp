@@ -1,5 +1,6 @@
 #include "boardeditordialog.h"
 
+#include <QButtonGroup>
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
@@ -13,10 +14,12 @@
 #include <QMessageBox>
 #include <QPixmap>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QSpinBox>
 #include <QVBoxLayout>
 
 #include "../core/units.h"
+#include "helphint.h"
 
 namespace {
 constexpr int kThumbW = 96;
@@ -24,7 +27,13 @@ constexpr int kThumbH = 60;
 }  // namespace
 
 BoardEditorDialog::BoardEditorDialog(QWidget *parent) : QDialog(parent) {
-	setWindowTitle(tr("基板を編集"));
+	m_imageModeRadio = new QRadioButton(tr("画像から作る"), this);
+	m_paramModeRadio = new QRadioButton(tr("パラメトリック (画像なし)"), this);
+	m_paramModeRadio->setChecked(true);
+	m_modeGroup = new QButtonGroup(this);
+	m_modeGroup->addButton(m_imageModeRadio);
+	m_modeGroup->addButton(m_paramModeRadio);
+	connect(m_modeGroup, &QButtonGroup::buttonToggled, this, &BoardEditorDialog::onCreationModeToggled);
 
 	m_idEdit = new QLineEdit(this);
 	m_idEdit->setPlaceholderText(tr("例: my-board-1"));
@@ -105,61 +114,73 @@ BoardEditorDialog::BoardEditorDialog(QWidget *parent) : QDialog(parent) {
 	updateThumbnail(m_frontBgThumb, m_backgroundFront);
 	updateThumbnail(m_backBgThumb, m_backgroundBack);
 
-	auto *form = new QFormLayout();
-	form->addRow(tr("ID:"), m_idEdit);
-	form->addRow(tr("名前:"), m_nameEdit);
-	form->addRow(tr("列数 (cols):"), m_colsSpin);
-	form->addRow(tr("行数 (rows):"), m_rowsSpin);
-	form->addRow(tr("ピッチ:"), m_pitchSpin);
+	auto *modeRow = new QHBoxLayout();
+	modeRow->addWidget(m_imageModeRadio);
+	modeRow->addWidget(m_paramModeRadio);
+	modeRow->addStretch(1);
+
+	m_form = new QFormLayout();
+	m_form->addRow(tr("作成方法:"), modeRow);
+	m_form->addRow(tr("ID:"), m_idEdit);
+	m_form->addRow(tr("名前:"), m_nameEdit);
+	m_form->addRow(tr("列数 (cols):"), m_colsSpin);
+	m_form->addRow(tr("行数 (rows):"), m_rowsSpin);
+	m_form->addRow(tr("ピッチ:"), m_pitchSpin);
 	auto *originRow = new QHBoxLayout();
 	originRow->addWidget(new QLabel(tr("X:"), this));
 	originRow->addWidget(m_originXSpin);
 	originRow->addWidget(new QLabel(tr("Y:"), this));
 	originRow->addWidget(m_originYSpin);
 	originRow->addStretch(1);
-	form->addRow(tr("原点 (外形左上からの余白):"), originRow);
-	form->addRow(tr("パッド形状:"), m_padShapeCombo);
-	form->addRow(tr("パッド直径:"), m_padDiameterSpin);
-	form->addRow(tr("穴直径:"), m_holeDiameterSpin);
-	form->addRow(tr("銅箔パターン:"), m_copperCombo);
-	form->addRow(QString(), m_doubleSidedCheck);
-	auto *colorRow = new QHBoxLayout();
-	colorRow->addWidget(m_substrateColorButton);
-	colorRow->addWidget(new QLabel(tr("パッド:"), this));
-	colorRow->addWidget(m_padColorButton);
-	colorRow->addWidget(new QLabel(tr("銅箔:"), this));
-	colorRow->addWidget(m_copperColorButton);
-	colorRow->addStretch(1);
-	form->addRow(tr("基板色:"), colorRow);
+	m_form->addRow(tr("原点 (外形左上からの余白):"), originRow);
+	m_form->addRow(tr("パッド形状:"), m_padShapeCombo);
+	m_form->addRow(tr("パッド直径:"), m_padDiameterSpin);
+	m_form->addRow(tr("穴直径:"), m_holeDiameterSpin);
+	m_form->addRow(tr("銅箔パターン:"), m_copperCombo);
+	m_form->addRow(QString(), m_doubleSidedCheck);
+	m_colorRow = new QHBoxLayout();
+	m_colorRow->addWidget(m_substrateColorButton);
+	m_colorRow->addWidget(new QLabel(tr("パッド:"), this));
+	m_colorRow->addWidget(m_padColorButton);
+	m_colorRow->addWidget(new QLabel(tr("銅箔:"), this));
+	m_colorRow->addWidget(m_copperColorButton);
+	m_colorRow->addStretch(1);
+	m_form->addRow(tr("基板色:"), m_colorRow);
 
-	auto *frontBgRow = new QHBoxLayout();
-	frontBgRow->addWidget(m_frontBgThumb);
-	frontBgRow->addWidget(frontBgOpenButton);
-	frontBgRow->addWidget(m_frontBgClearButton);
-	frontBgRow->addStretch(1);
-	form->addRow(tr("表面画像 (任意):"), frontBgRow);
+	m_frontBgRow = new QHBoxLayout();
+	m_frontBgRow->addWidget(m_frontBgThumb);
+	m_frontBgRow->addWidget(frontBgOpenButton);
+	m_frontBgRow->addWidget(m_frontBgClearButton);
+	m_frontBgRow->addStretch(1);
+	auto *frontBgLabelWidget = new QWidget(this);
+	auto *frontBgLabelLayout = new QHBoxLayout(frontBgLabelWidget);
+	frontBgLabelLayout->setContentsMargins(0, 0, 0, 0);
+	frontBgLabelLayout->addWidget(new QLabel(tr("表面画像:"), this));
+	frontBgLabelLayout->addWidget(
+		helphint::button(tr("画像モードでは必須です。この画像の画素サイズがそのまま基板サイズになります。"), this));
+	m_form->addRow(frontBgLabelWidget, m_frontBgRow);
 
-	auto *backBgRow = new QHBoxLayout();
-	backBgRow->addWidget(m_backBgThumb);
-	backBgRow->addWidget(backBgOpenButton);
-	backBgRow->addWidget(m_backBgClearButton);
-	backBgRow->addStretch(1);
-	form->addRow(tr("裏面画像 (任意):"), backBgRow);
+	m_backBgRow = new QHBoxLayout();
+	m_backBgRow->addWidget(m_backBgThumb);
+	m_backBgRow->addWidget(backBgOpenButton);
+	m_backBgRow->addWidget(m_backBgClearButton);
+	m_backBgRow->addStretch(1);
+	auto *backBgLabelWidget = new QWidget(this);
+	auto *backBgLabelLayout = new QHBoxLayout(backBgLabelWidget);
+	backBgLabelLayout->setContentsMargins(0, 0, 0, 0);
+	backBgLabelLayout->addWidget(new QLabel(tr("裏面画像 (任意):"), this));
+	backBgLabelLayout->addWidget(helphint::button(
+		tr("「基板を裏から見た向き」で用意してください (PasS の *_.bmp と同じ規約)。"), this));
+	m_form->addRow(backBgLabelWidget, m_backBgRow);
 
-	auto *backBgHint = new QLabel(
-		tr("裏面画像は「基板を裏から見た向き」で用意してください (PasS の *_.bmp と同じ規約)。"), this);
-	backBgHint->setWordWrap(true);
-	backBgHint->setStyleSheet(QStringLiteral("color: palette(mid); font-size: 11px;"));
-	form->addRow(QString(), backBgHint);
-
-	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-	connect(buttons, &QDialogButtonBox::accepted, this, &BoardEditorDialog::onAccept);
-	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+	m_buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+	connect(m_buttons, &QDialogButtonBox::accepted, this, &BoardEditorDialog::onAccept);
+	connect(m_buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
 	auto *layout = new QVBoxLayout(this);
-	layout->addLayout(form);
+	layout->addLayout(m_form);
 	layout->addWidget(m_derivedLabel);
-	layout->addWidget(buttons);
+	layout->addWidget(m_buttons);
 
 	connect(m_colsSpin, &QSpinBox::valueChanged, this, &BoardEditorDialog::updateDerivedLabel);
 	connect(m_rowsSpin, &QSpinBox::valueChanged, this, &BoardEditorDialog::updateDerivedLabel);
@@ -170,7 +191,34 @@ BoardEditorDialog::BoardEditorDialog(QWidget *parent) : QDialog(parent) {
 	connect(m_padColorButton, &QPushButton::clicked, this, &BoardEditorDialog::pickPadColor);
 	connect(m_copperColorButton, &QPushButton::clicked, this, &BoardEditorDialog::pickCopperColor);
 
+	setMode(Mode::Create);
+	onCreationModeToggled();
 	updateDerivedLabel();
+}
+
+void BoardEditorDialog::onCreationModeToggled() {
+	const bool imageMode = m_imageModeRadio->isChecked();
+	// 画像モード: パッド形状・パッド直径・銅箔パターン・両面・色は背景画像がすべての
+	// 見た目を担うため無意味 (かつ紛らわしい) なので隠す。
+	m_form->setRowVisible(m_padShapeCombo, !imageMode);
+	m_form->setRowVisible(m_padDiameterSpin, !imageMode);
+	m_form->setRowVisible(m_copperCombo, !imageMode);
+	m_form->setRowVisible(m_doubleSidedCheck, !imageMode);
+	m_form->setRowVisible(m_colorRow, !imageMode);
+	// パラメトリックモード: 画像欄は無意味なので隠す。
+	m_form->setRowVisible(m_frontBgRow, imageMode);
+	m_form->setRowVisible(m_backBgRow, imageMode);
+	updateDerivedLabel();
+}
+
+void BoardEditorDialog::setMode(Mode mode) {
+	if (mode == Mode::Create) {
+		setWindowTitle(tr("基板を作成"));
+		m_buttons->button(QDialogButtonBox::Ok)->setText(tr("作成"));
+	} else {
+		setWindowTitle(tr("基板を編集"));
+		m_buttons->button(QDialogButtonBox::Ok)->setText(tr("保存"));
+	}
 }
 
 void BoardEditorDialog::updateColorButton(QPushButton *button, const QColor &color) {
@@ -208,7 +256,7 @@ void BoardEditorDialog::updateDerivedLabel() {
 	const BoardSpec b = boardFromFields();
 	const double widthMm = b.size.width() * units::MmPerUnit;
 	const double heightMm = b.size.height() * units::MmPerUnit;
-	const bool sizedByImage = m_backgroundFront.has_value() && !m_backgroundFront->image.isNull();
+	const bool sizedByImage = b.backgroundFront.has_value() && !b.backgroundFront->image.isNull();
 	m_derivedLabel->setText(tr("基板サイズ: %1 x %2 単位 (%3mm x %4mm)%5 / 穴数: %6")
 								 .arg(b.size.width())
 								 .arg(b.size.height())
@@ -274,16 +322,30 @@ BoardSpec BoardEditorDialog::boardFromFields() const {
 	b.rows = m_rowsSpin->value();
 	b.pitch = m_pitchSpin->value();
 	b.origin = QPoint(m_originXSpin->value(), m_originYSpin->value());
-	b.padShape = static_cast<PadShape>(m_padShapeCombo->currentData().toInt());
-	b.padDiameter = m_padDiameterSpin->value();
 	b.holeDiameter = m_holeDiameterSpin->value();
-	b.copper = static_cast<CopperPattern>(m_copperCombo->currentData().toInt());
-	b.doubleSided = m_doubleSidedCheck->isChecked();
-	b.substrateColor = m_substrateColor;
-	b.padColor = m_padColor;
-	b.copperColor = m_copperColor;
-	b.backgroundFront = m_backgroundFront;
-	b.backgroundBack = m_backgroundBack;
+	if (m_imageModeRadio->isChecked()) {
+		// 画像モード: 見た目はすべて背景画像が担う。パッド・銅箔・色は既定値のまま
+		// (UI 上も非表示にしてあるので、ここで強制しておかないと以前入力した値が
+		// こっそり残ってしまう)。
+		b.padShape = PadShape::None;
+		b.copper = CopperPattern::None;
+		b.doubleSided = false;
+		b.substrateColor = boarddefaults::Substrate;
+		b.padColor = boarddefaults::Pad;
+		b.copperColor = boarddefaults::Copper;
+		b.backgroundFront = m_backgroundFront;
+		b.backgroundBack = m_backgroundBack;
+	} else {
+		b.padShape = static_cast<PadShape>(m_padShapeCombo->currentData().toInt());
+		b.padDiameter = m_padDiameterSpin->value();
+		b.copper = static_cast<CopperPattern>(m_copperCombo->currentData().toInt());
+		b.doubleSided = m_doubleSidedCheck->isChecked();
+		b.substrateColor = m_substrateColor;
+		b.padColor = m_padColor;
+		b.copperColor = m_copperColor;
+		b.backgroundFront.reset();
+		b.backgroundBack.reset();
+	}
 	// サイズ: 表面画像があればその画素サイズを基板サイズとする (1単位=1画素なので自然であり、
 	// PasS 取込基板 (size == BMP のサイズ) と同じ規則になる)。無ければ従来どおり
 	// cols/rows/pitch/origin から対称マージンで自動導出する。
@@ -296,6 +358,11 @@ BoardSpec BoardEditorDialog::boardFromFields() const {
 }
 
 void BoardEditorDialog::setBoard(const BoardSpec &board) {
+	// 背景画像を持つ基板は画像モード、持たない基板はパラメトリックモードとして編集する。
+	const bool hasImage = board.backgroundFront.has_value() && !board.backgroundFront->image.isNull();
+	m_imageModeRadio->setChecked(hasImage);
+	m_paramModeRadio->setChecked(!hasImage);
+
 	m_idEdit->setText(board.id);
 	m_nameEdit->setText(board.name);
 	m_colsSpin->setValue(board.cols);
@@ -320,7 +387,8 @@ void BoardEditorDialog::setBoard(const BoardSpec &board) {
 	m_backgroundBack = board.backgroundBack;
 	updateThumbnail(m_frontBgThumb, m_backgroundFront);
 	updateThumbnail(m_backBgThumb, m_backgroundBack);
-	updateDerivedLabel();
+	onCreationModeToggled();  // 行の表示/非表示を反映 (内部で updateDerivedLabel() も呼ぶ)
+	setMode(Mode::Edit);
 }
 
 BoardSpec BoardEditorDialog::board() const {
@@ -330,6 +398,10 @@ BoardSpec BoardEditorDialog::board() const {
 void BoardEditorDialog::onAccept() {
 	if (m_idEdit->text().trimmed().isEmpty() || m_nameEdit->text().trimmed().isEmpty()) {
 		QMessageBox::warning(this, tr("入力エラー"), tr("ID と名前は必須です。"));
+		return;
+	}
+	if (m_imageModeRadio->isChecked() && (!m_backgroundFront.has_value() || m_backgroundFront->image.isNull())) {
+		QMessageBox::warning(this, tr("入力エラー"), tr("画像モードでは表面画像が必須です。"));
 		return;
 	}
 

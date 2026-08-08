@@ -8,10 +8,10 @@ class QLineEdit;
 class QLabel;
 class LicensePickerWidget;
 
-// ライブラリの複製ダイアログ (PasS 互換など読み込み専用のライブラリを編集可能にする
-// 唯一の経路)。id/name/author/version は複製元と異なる値への変更を強制する。
-// 元ライセンスの派生ポリシーがコピーレフト系/NC系固定であれば、ライセンス選択も
-// それに応じて制限する。
+// ライブラリの複製ダイアログ。id/name/author/version は複製元と異なる値への変更を
+// 強制する。Phase 14 で全ライブラリが直接編集可能になったため、このダイアログの
+// 役割は「独立したコピーを作る」ことに絞られる (派生ライセンスを元に強制する仕組みは
+// 廃止した — 複製物のライセンスは常に自由に選べる)。
 class DuplicateLibraryDialog : public QDialog {
 	Q_OBJECT
 

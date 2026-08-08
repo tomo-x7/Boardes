@@ -88,3 +88,18 @@ private:
 	QString m_uuid;
 	QString m_oldRefDes, m_oldValue, m_newRefDes, m_newValue;
 };
+
+// オブジェクト一覧の目玉トグル用。表示/非表示は削除ではないので Undo 対象にする。
+class SetPlacementVisibleCommand : public QUndoCommand {
+public:
+	SetPlacementVisibleCommand(ToolContext *ctx, const QString &uuid, bool oldVisible, bool newVisible,
+							   QUndoCommand *parent = nullptr);
+	void undo() override;
+	void redo() override;
+
+private:
+	ToolContext *m_ctx;
+	QString m_uuid;
+	bool m_oldVisible;
+	bool m_newVisible;
+};

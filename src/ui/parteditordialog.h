@@ -15,6 +15,7 @@ class QPushButton;
 class QLabel;
 class QTableWidget;
 class QTableWidgetItem;
+class QDialogButtonBox;
 
 // 部品アートワークを表示し、クリックでピンを打っていくためのキャンバス。
 // 小さな画像でも打ちやすいよう整数倍率で拡大表示する (最近傍拡大、ドット感を保つ)。
@@ -26,6 +27,10 @@ public:
 
 	void setImage(const QImage &image);
 	void setPins(const QVector<Pin> &pins);
+	// 基準点 (緑の十字) の表示。anchorPickMode が true のあいだは、次のクリックで
+	// クリック位置を基準点にする (ピンの追加/削除より優先する)。
+	void setAnchor(QPoint anchor);
+	void setAnchorPickMode(bool on);
 	QSize sizeHint() const override;
 
 signals:
@@ -39,6 +44,8 @@ protected:
 private:
 	QImage m_image;
 	QVector<Pin> m_pins;
+	QPoint m_anchor;
+	bool m_anchorPickMode = false;
 	int m_scale = 1;
 
 	QPoint widgetToImage(const QPoint &widgetPos) const;
@@ -54,7 +61,12 @@ class PartEditorDialog : public QDialog {
 	Q_OBJECT
 
 public:
+	enum class Mode { Create, Edit };
+
 	explicit PartEditorDialog(QWidget *parent = nullptr);
+
+	// タイトルと OK ボタンの文言を切り替える。setPart() を呼ぶと自動的に Edit になる。
+	void setMode(Mode mode);
 
 	// 編集対象を設定する。既存部品のアートワークは (クロマキー処理済みなら) その
 	// 透過済み画像をそのまま「元画像」として扱う (元の不透明画像は復元できないため)。
@@ -64,6 +76,8 @@ public:
 private slots:
 	void onOpenImage();
 	void onToggleEyedropper(bool on);
+	void onToggleAnchorPick(bool on);
+	void onResetAnchor();
 	void onCanvasClicked(QPoint imagePos, Qt::MouseButton button);
 	void onChromaColorButtonClicked();
 	void onChromaKeyToggled(bool on);
@@ -86,9 +100,16 @@ private:
 	QSpinBox *m_newPinDrillSpin;
 	QTableWidget *m_pinTable;
 	QPushButton *m_deletePinButton;
+	QLabel *m_anchorLabel;
+	QPushButton *m_anchorPickButton;
+	QPushButton *m_anchorResetButton;
+	QDialogButtonBox *m_buttons = nullptr;
 
 	QImage m_sourceImage;  // ユーザーが読み込んだ画像 (クロマキー適用前の「元画像」)
 	QVector<Pin> m_pins;
+	QPoint m_anchor;
+	bool m_anchorExplicit = false;
+	bool m_anchorPickActive = false;
 	// 既定値は画像を開いたときに左上画素の色へ差し替える (onOpenImage 参照)。
 	// 未読込のあいだはマゼンタ (透過色の慣習的な色) にしておく。
 	QColor m_chromaKey{255, 0, 255};
@@ -97,6 +118,8 @@ private:
 	void rebuildPinTable();
 	void refreshCanvasArtwork();
 	void renumberSequentially();
+	void updateAnchorLabel();
+	QPoint effectiveAnchor() const;
 	int nextPinNumber() const;
 	static void updateColorButton(QPushButton *button, const QColor &color);
 };

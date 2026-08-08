@@ -9,12 +9,14 @@ class LibraryManager;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QLabel;
-class QPushButton;
 
 // DRC (デザインルールチェック) の結果一覧パネル。
 //
 // 編集のたびに (基板規模的に全件走査で十分高速なため、増分ではなく) 毎回まとめて
-// 再検査する想定。行をクリックすると該当箇所へジャンプしてほしい旨を
+// 再検査する (MainWindow が QUndoStack::indexChanged / LibraryManager::librariesChanged
+// の両方から refresh() を呼ぶ)。手動の「再検査」ボタンは無い — 完全なリアルタイムで
+// ないなら別の箇所 (再検査が必要なタイミングの検出漏れ) を直すべき、というのが
+// Phase 15 での判断。行をクリックすると該当箇所へジャンプしてほしい旨を
 // findingActivated シグナルで外部 (MainWindow) に伝える — ジャンプ・選択の実際の
 // 処理はビュー/シーンを持つ MainWindow 側の責務とする。
 class DrcPanel : public QWidget {
@@ -40,7 +42,6 @@ private:
 
 	QLabel *m_summaryLabel;
 	QTreeWidget *m_tree;
-	QPushButton *m_refreshButton;
 
 	void onItemClicked(QTreeWidgetItem *item, int column);
 };

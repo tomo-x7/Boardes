@@ -1,6 +1,10 @@
 #include "part.h"
 
 #include <QBuffer>
+#include <algorithm>
+
+#include "../core/geometry.h"
+#include "../core/units.h"
 
 QString partKindToString(PartKind kind) {
 	switch (kind) {
@@ -75,6 +79,20 @@ Artwork Artwork::fromImageAsIs(QImage source) {
 	art.chromaKey.reset();
 	art.encodeFromImage();
 	return art;
+}
+
+QPoint Part::resolveAnchor() const {
+	if (anchorExplicit) {
+		return anchor;
+	}
+	if (!pins.isEmpty()) {
+		auto it = std::min_element(pins.begin(), pins.end(),
+									[](const Pin &a, const Pin &b) { return a.number < b.number; });
+		return it->pos;
+	}
+	// ピンが無い部品 (テキスト・塗りつぶし等): 画像中心をフル格子刻みに丸める。
+	const QSize sz = size();
+	return snapPoint(QPoint(sz.width() / 2, sz.height() / 2), units::Pitch);
 }
 
 bool Part::matchesQuery(const QString &query) const {

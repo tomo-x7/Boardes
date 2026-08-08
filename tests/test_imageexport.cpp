@@ -1,4 +1,5 @@
 #include <QFileInfo>
+#include <QImage>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -62,10 +63,22 @@ void TestImageExport::pngBothSidesIsWiderThanEitherSide() {
 	QCOMPARE(combined.height(), 60);
 }
 
+namespace {
+// 書き出し画像は boardRect() ぴったりにトリミングされる (Phase 12) ので、基板の外側の
+// 余白では検証できない。そのかわり、完全に透過な背景画像を基板に貼ることで
+// 「基板自体は何も塗らない」状況を作り、options.transparentBackground が effective に
+// なる (initial QImage::fill() がそのまま残る) ことを検証する。
+void useFullyTransparentBoard(Document &doc) {
+	doc.board.size = QSize(10, 10);
+	QImage bg(10, 10, QImage::Format_ARGB32);
+	bg.fill(Qt::transparent);
+	doc.board.backgroundFront = Artwork::fromImageAsIs(bg);
+}
+}  // namespace
+
 void TestImageExport::transparentBackgroundLeavesCornerPixelTransparent() {
-	// 基板自体は不透明に塗りつぶされるため、基板の外側 (シーン矩形の余白部分) で
-	// 検証する。余白を持たせるため sceneRect を基板より広く取る。
-	m_front->setSceneRect(-20, -20, 140, 100);
+	useFullyTransparentBoard(*m_doc);
+	m_front->syncBoard();
 	imageexport::Options options;
 	options.transparentBackground = true;
 	const QImage img = imageexport::renderToImage(m_front.get(), options);
@@ -73,7 +86,8 @@ void TestImageExport::transparentBackgroundLeavesCornerPixelTransparent() {
 }
 
 void TestImageExport::opaqueBackgroundFillsCornerWhite() {
-	m_front->setSceneRect(-20, -20, 140, 100);
+	useFullyTransparentBoard(*m_doc);
+	m_front->syncBoard();
 	imageexport::Options options;
 	options.transparentBackground = false;
 	const QImage img = imageexport::renderToImage(m_front.get(), options);

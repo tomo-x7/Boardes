@@ -25,6 +25,9 @@ void OverlayItem::recomputeBounds() {
 	if (m_snapHintVisible) {
 		r |= QRectF(m_snapHintPos, QSizeF(0, 0));
 	}
+	if (m_hasGhost) {
+		r |= QRectF(m_ghostPos, QSizeF(m_ghostSize));
+	}
 	m_bounds = r.adjusted(-6, -6, 6, 6);
 }
 
@@ -94,6 +97,27 @@ void OverlayItem::setSnapHint(QPoint pos, bool visible) {
 	update();
 }
 
+void OverlayItem::setPlacementGhost(const QImage &image, QPoint pos, QSize size, bool valid) {
+	prepareGeometryChange();
+	m_hasGhost = true;
+	m_ghostImage = image;
+	m_ghostPos = pos;
+	m_ghostSize = size;
+	m_ghostValid = valid;
+	recomputeBounds();
+	update();
+}
+
+void OverlayItem::clearPlacementGhost() {
+	if (!m_hasGhost) {
+		return;
+	}
+	prepareGeometryChange();
+	m_hasGhost = false;
+	recomputeBounds();
+	update();
+}
+
 void OverlayItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *) {
 	if (m_hasWirePreview && !m_wirePoints.isEmpty()) {
 		QPen pen(WireItem::colorForLayer(m_wireLayer));
@@ -132,5 +156,22 @@ void OverlayItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWi
 		painter->setPen(QPen(QColor(255, 200, 0), 0.6));
 		painter->setBrush(Qt::NoBrush);
 		painter->drawEllipse(QPointF(m_snapHintPos), 2.0, 2.0);
+	}
+
+	if (m_hasGhost) {
+		painter->save();
+		painter->setOpacity(0.55);
+		const QRectF target = QRectF(QPointF(m_ghostPos), QSizeF(m_ghostSize));
+		if (!m_ghostImage.isNull()) {
+			painter->drawImage(target, m_ghostImage, QRectF(m_ghostImage.rect()));
+		}
+		painter->setOpacity(1.0);
+		QPen pen(m_ghostValid ? QColor(80, 220, 120) : QColor(230, 60, 60));
+		pen.setWidthF(0.8);
+		pen.setStyle(Qt::DashLine);
+		painter->setPen(pen);
+		painter->setBrush(Qt::NoBrush);
+		painter->drawRect(target);
+		painter->restore();
 	}
 }

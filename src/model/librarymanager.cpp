@@ -1,13 +1,22 @@
 #include "librarymanager.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QStandardPaths>
 
+#include "../io/boardio.h"
 #include "../io/libraryio.h"
 #include "../io/partio.h"
-#include "../io/boardio.h"
 #include "../io/passimport.h"
+
+namespace {
+LibraryManager::OpResult errorResult(const QString &message) {
+	LibraryManager::OpResult r;
+	r.error = message;
+	return r;
+}
+}  // namespace
 
 LibraryManager::LibraryManager(QObject *parent) : QObject(parent) {
 }
@@ -22,14 +31,28 @@ QString LibraryManager::libraryDir(const QString &id) const {
 
 void LibraryManager::loadAll() {
 	m_libraries.clear();
+	m_loadIssues.clear();
 
 	QDir root(storageDir());
 	if (root.exists()) {
 		const QFileInfoList dirs = root.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
 		for (const auto &fi : dirs) {
-			auto lib = libraryio::loadFromDirectory(fi.absoluteFilePath());
+			if (fi.fileName().endsWith(QStringLiteral(".tmp"))) {
+				// persist() が失敗した際の作業ディレクトリの残骸。無視する。
+				continue;
+			}
+			LoadResult loadResult;
+			auto lib = libraryio::loadFromDirectory(fi.absoluteFilePath(), &loadResult);
 			if (lib && !lib->id.isEmpty()) {
 				m_libraries.insert(lib->id, std::make_shared<Library>(*lib));
+				for (const QString &w : loadResult.warnings) {
+					qWarning("%s: %s", qUtf8Printable(fi.absoluteFilePath()), qUtf8Printable(w));
+				}
+			} else {
+				const QString reason = loadResult.detail.isEmpty()
+											? QStringLiteral("library.json を読み込めませんでした")
+											: loadResult.detail;
+				m_loadIssues.append({fi.absoluteFilePath(), reason});
 			}
 		}
 	}
@@ -46,8 +69,7 @@ void LibraryManager::ensureBuiltinLibraries() {
 		lib->author.clear();
 		lib->version = QStringLiteral("1.0.0");
 		lib->license.kind = LicenseKind::AllRightsReserved;
-		lib->redistribution.allowed = false;  // マイライブラリは常にエクスポート不可
-		lib->readOnly = false;
+		lib->redistribution.allowed = false;  // マイライブラリは既定でエクスポート不可 (バックアップ用途では可)
 		CategoryInfo uncategorized;
 		uncategorized.id = uncategorizedCategoryId();
 		uncategorized.name = QStringLiteral("未分類");
@@ -66,17 +88,29 @@ void LibraryManager::ensureBuiltinLibraries() {
 		lib->version = QStringLiteral("0");
 		lib->license.kind = LicenseKind::Custom;
 		lib->license.customName = QStringLiteral("PasS (学校・個人での使用に限り自由に使用可)");
-		lib->redistribution.allowed = false;  // 再配布不可
-		lib->readOnly = true;
+		lib->redistribution.allowed = false;  // 再配布不可 (手元でのバックアップ・編集は自由)
 		m_libraries.insert(lib->id, lib);
 		persist(*lib);
 	}
 }
 
 bool LibraryManager::persist(const Library &lib) {
+	// 一時ディレクトリに書き切ってから、成功した場合のみ本来のディレクトリと入れ替える。
+	// 部品1件の追加のような小さな変更でも毎回ディレクトリ全体を書き直す都合上、
+	// 途中で失敗する (ディスク満杯・権限エラー等) と旧実装では既存データごと消えていた。
 	const QString dir = libraryDir(lib.id);
-	QDir(dir).removeRecursively();  // 前回の内容を消してから書き直す (古い部品の消し忘れを防ぐ)
-	return libraryio::saveToDirectory(lib, dir);
+	const QString tmpDir = dir + QStringLiteral(".tmp");
+	QDir(tmpDir).removeRecursively();
+	if (!libraryio::saveToDirectory(lib, tmpDir)) {
+		QDir(tmpDir).removeRecursively();
+		return false;
+	}
+	QDir(dir).removeRecursively();
+	if (!QDir().rename(tmpDir, dir)) {
+		QDir(tmpDir).removeRecursively();
+		return false;
+	}
+	return true;
 }
 
 std::shared_ptr<Part> LibraryManager::resolvePart(const QString &libraryId, const QString &partId) const {
@@ -89,7 +123,7 @@ std::shared_ptr<BoardSpec> LibraryManager::resolveBoard(const QString &libraryId
 	return lib ? lib->board(boardId) : nullptr;
 }
 
-QString LibraryManager::uniquePartId(const Library &lib, const QString &baseId) const {
+QString LibraryManager::uniquePartIdIn(const Library &lib, const QString &baseId) const {
 	if (!lib.parts.contains(baseId)) {
 		return baseId;
 	}
@@ -100,7 +134,7 @@ QString LibraryManager::uniquePartId(const Library &lib, const QString &baseId) 
 	return baseId + QStringLiteral("-%1").arg(n);
 }
 
-QString LibraryManager::uniqueBoardId(const Library &lib, const QString &baseId) const {
+QString LibraryManager::uniqueBoardIdIn(const Library &lib, const QString &baseId) const {
 	if (!lib.boards.contains(baseId)) {
 		return baseId;
 	}
@@ -111,14 +145,40 @@ QString LibraryManager::uniqueBoardId(const Library &lib, const QString &baseId)
 	return baseId + QStringLiteral("-%1").arg(n);
 }
 
+QString LibraryManager::uniquePartId(const QString &libId, const QString &baseId) const {
+	const auto lib = library(libId);
+	return lib ? uniquePartIdIn(*lib, baseId) : baseId;
+}
+
+QString LibraryManager::uniqueBoardId(const QString &libId, const QString &baseId) const {
+	const auto lib = library(libId);
+	return lib ? uniqueBoardIdIn(*lib, baseId) : baseId;
+}
+
 QString LibraryManager::uniquePartIdForMyLibrary(const QString &baseId) const {
-	const auto lib = library(myLibraryId());
-	return lib ? uniquePartId(*lib, baseId) : baseId;
+	return uniquePartId(myLibraryId(), baseId);
 }
 
 QString LibraryManager::uniqueBoardIdForMyLibrary(const QString &baseId) const {
-	const auto lib = library(myLibraryId());
-	return lib ? uniqueBoardId(*lib, baseId) : baseId;
+	return uniqueBoardId(myLibraryId(), baseId);
+}
+
+template <class F>
+bool LibraryManager::mutateLibrary(const QString &libId, F mutator) {
+	const auto existing = library(libId);
+	if (!existing) {
+		return false;
+	}
+	auto lib = std::make_shared<Library>(*existing);
+	if (!mutator(*lib)) {
+		return false;
+	}
+	if (!persist(*lib)) {
+		return false;
+	}
+	m_libraries.insert(libId, lib);
+	emit librariesChanged();
+	return true;
 }
 
 LibraryManager::OpResult LibraryManager::importPassFolder(const QString &sourceDir) {
@@ -133,7 +193,6 @@ LibraryManager::OpResult LibraryManager::importPassFolder(const QString &sourceD
 	lib->license.kind = LicenseKind::Custom;
 	lib->license.customName = QStringLiteral("PasS (学校・個人での使用に限り自由に使用可)");
 	lib->redistribution.allowed = false;
-	lib->readOnly = true;
 
 	const auto importResult = passimport::importFromDirectory(sourceDir, *lib);
 	if (!importResult.ok) {
@@ -175,32 +234,10 @@ LibraryManager::OpResult LibraryManager::importPartFile(const QString &filePath)
 		result.error = QStringLiteral("部品ファイルを読み込めませんでした: %1").arg(filePath);
 		return result;
 	}
-
-	auto lib = std::make_shared<Library>(*m_libraries.value(myLibraryId()));
 	if (part->id.isEmpty()) {
 		part->id = QFileInfo(filePath).completeBaseName();
 	}
-	part->id = uniquePartId(*lib, part->id);
-	lib->parts.insert(part->id, std::make_shared<Part>(*part));
-	if (!lib->category(uncategorizedCategoryId())) {
-		CategoryInfo uncategorized;
-		uncategorized.id = uncategorizedCategoryId();
-		uncategorized.name = QStringLiteral("未分類");
-		lib->categories.append(uncategorized);
-	}
-	lib->partCategory.insert(part->id, uncategorizedCategoryId());
-
-	if (!persist(*lib)) {
-		result.error = QStringLiteral("マイライブラリの保存に失敗しました");
-		return result;
-	}
-	m_libraries.insert(lib->id, lib);
-
-	result.ok = true;
-	result.libraryId = lib->id;
-	result.partCount = 1;
-	emit librariesChanged();
-	return result;
+	return addPartTo(myLibraryId(), *part);
 }
 
 LibraryManager::OpResult LibraryManager::importBoardFile(const QString &filePath) {
@@ -209,41 +246,149 @@ LibraryManager::OpResult LibraryManager::importBoardFile(const QString &filePath
 		result.error = QStringLiteral("未対応の拡張子です (.bboard を指定してください)");
 		return result;
 	}
-	const auto board = boardio::load(filePath);
+	LoadResult loadResult;
+	const auto board = boardio::load(filePath, &loadResult);
 	if (!board) {
-		result.error = QStringLiteral("基板ファイルを読み込めませんでした: %1").arg(filePath);
+		result.error = loadResult.detail.isEmpty()
+							? QStringLiteral("基板ファイルを読み込めませんでした: %1").arg(filePath)
+							: QStringLiteral("%1\n%2").arg(loadResult.summary, loadResult.detail);
 		return result;
 	}
-
-	auto lib = std::make_shared<Library>(*m_libraries.value(myLibraryId()));
 	BoardSpec b = *board;
 	if (b.id.isEmpty()) {
 		b.id = QFileInfo(filePath).completeBaseName();
 	}
-	b.id = uniqueBoardId(*lib, b.id);
-	lib->boards.insert(b.id, std::make_shared<BoardSpec>(b));
+	return addBoardTo(myLibraryId(), b);
+}
 
+LibraryManager::OpResult LibraryManager::createLibrary(const Library &meta) {
+	if (meta.id.isEmpty()) {
+		return errorResult(QStringLiteral("ライブラリ id が空です"));
+	}
+	if (m_libraries.contains(meta.id)) {
+		return errorResult(QStringLiteral("id が既存のライブラリと重複しています: %1").arg(meta.id));
+	}
+	auto lib = std::make_shared<Library>(meta);
+	if (lib->categories.isEmpty()) {
+		CategoryInfo uncategorized;
+		uncategorized.id = uncategorizedCategoryId();
+		uncategorized.name = QStringLiteral("未分類");
+		lib->categories.append(uncategorized);
+	}
 	if (!persist(*lib)) {
-		result.error = QStringLiteral("マイライブラリの保存に失敗しました");
-		return result;
+		return errorResult(QStringLiteral("ライブラリの保存に失敗しました"));
 	}
 	m_libraries.insert(lib->id, lib);
 
+	OpResult result;
 	result.ok = true;
 	result.libraryId = lib->id;
-	result.boardCount = 1;
 	emit librariesChanged();
 	return result;
 }
 
-LibraryManager::OpResult LibraryManager::addPartToMyLibrary(const Part &part, const QString &categoryId) {
-	OpResult result;
-	if (part.id.isEmpty()) {
-		result.error = QStringLiteral("部品 id が空です");
-		return result;
+bool LibraryManager::updateLibraryMetadata(const QString &id, const Library &updated) {
+	const auto existing = library(id);
+	if (!existing) {
+		return false;
 	}
+	auto lib = std::make_shared<Library>(updated);
+	lib->id = id;  // id は変えさせない
 
-	auto lib = std::make_shared<Library>(*m_libraries.value(myLibraryId()));
+	if (!persist(*lib)) {
+		return false;
+	}
+	m_libraries.insert(id, lib);
+	emit librariesChanged();
+	return true;
+}
+
+bool LibraryManager::removeLibrary(const QString &id) {
+	if (!m_libraries.contains(id)) {
+		return false;
+	}
+	QDir(libraryDir(id)).removeRecursively();
+	m_libraries.remove(id);
+	// マイライブラリ・PasS互換は概念上常に存在する前提のコードが他にあるため
+	// (addPartToMyLibrary 等)、削除されたら空の状態で作り直す。
+	ensureBuiltinLibraries();
+	emit librariesChanged();
+	return true;
+}
+
+bool LibraryManager::addCategory(const QString &libId, const CategoryInfo &cat) {
+	return mutateLibrary(libId, [&](Library &lib) {
+		if (cat.id.isEmpty() || lib.category(cat.id)) {
+			return false;
+		}
+		lib.categories.append(cat);
+		return true;
+	});
+}
+
+bool LibraryManager::updateCategory(const QString &libId, const CategoryInfo &cat) {
+	return mutateLibrary(libId, [&](Library &lib) {
+		CategoryInfo *existing = lib.category(cat.id);
+		if (!existing) {
+			return false;
+		}
+		*existing = cat;
+		return true;
+	});
+}
+
+bool LibraryManager::removeCategory(const QString &libId, const QString &catId) {
+	if (catId == uncategorizedCategoryId()) {
+		return false;  // 未分類は削除できない (受け皿として常に必要)
+	}
+	return mutateLibrary(libId, [&](Library &lib) {
+		int idx = -1;
+		for (int i = 0; i < lib.categories.size(); ++i) {
+			if (lib.categories[i].id == catId) {
+				idx = i;
+				break;
+			}
+		}
+		if (idx < 0) {
+			return false;
+		}
+		lib.categories.removeAt(idx);
+		if (!lib.category(uncategorizedCategoryId())) {
+			CategoryInfo uncategorized;
+			uncategorized.id = uncategorizedCategoryId();
+			uncategorized.name = QStringLiteral("未分類");
+			lib.categories.append(uncategorized);
+		}
+		for (auto it = lib.partCategory.begin(); it != lib.partCategory.end(); ++it) {
+			if (it.value() == catId) {
+				it.value() = uncategorizedCategoryId();
+			}
+		}
+		return true;
+	});
+}
+
+bool LibraryManager::reorderCategories(const QString &libId, const QStringList &orderedIds) {
+	return mutateLibrary(libId, [&](Library &lib) {
+		for (int i = 0; i < orderedIds.size(); ++i) {
+			if (auto *c = lib.category(orderedIds[i])) {
+				c->order = i;
+			}
+		}
+		return true;
+	});
+}
+
+LibraryManager::OpResult LibraryManager::addPartTo(const QString &libId, const Part &part,
+													const QString &categoryId) {
+	if (part.id.isEmpty()) {
+		return errorResult(QStringLiteral("部品 id が空です"));
+	}
+	const auto existing = library(libId);
+	if (!existing) {
+		return errorResult(QStringLiteral("ライブラリが見つかりません: %1").arg(libId));
+	}
+	auto lib = std::make_shared<Library>(*existing);
 	lib->parts.insert(part.id, std::make_shared<Part>(part));
 
 	QString cat = categoryId;
@@ -259,11 +404,11 @@ LibraryManager::OpResult LibraryManager::addPartToMyLibrary(const Part &part, co
 	lib->partCategory.insert(part.id, cat);
 
 	if (!persist(*lib)) {
-		result.error = QStringLiteral("マイライブラリの保存に失敗しました");
-		return result;
+		return errorResult(QStringLiteral("ライブラリの保存に失敗しました"));
 	}
 	m_libraries.insert(lib->id, lib);
 
+	OpResult result;
 	result.ok = true;
 	result.libraryId = lib->id;
 	result.partCount = 1;
@@ -271,22 +416,44 @@ LibraryManager::OpResult LibraryManager::addPartToMyLibrary(const Part &part, co
 	return result;
 }
 
-LibraryManager::OpResult LibraryManager::addBoardToMyLibrary(const BoardSpec &board) {
-	OpResult result;
-	if (board.id.isEmpty()) {
-		result.error = QStringLiteral("基板 id が空です");
-		return result;
-	}
+bool LibraryManager::removePartFrom(const QString &libId, const QString &partId) {
+	return mutateLibrary(libId, [&](Library &lib) {
+		if (!lib.parts.contains(partId)) {
+			return false;
+		}
+		lib.parts.remove(partId);
+		lib.partCategory.remove(partId);
+		return true;
+	});
+}
 
-	auto lib = std::make_shared<Library>(*m_libraries.value(myLibraryId()));
+bool LibraryManager::setPartCategory(const QString &libId, const QString &partId, const QString &categoryId) {
+	return mutateLibrary(libId, [&](Library &lib) {
+		if (!lib.parts.contains(partId) || !lib.category(categoryId)) {
+			return false;
+		}
+		lib.partCategory.insert(partId, categoryId);
+		return true;
+	});
+}
+
+LibraryManager::OpResult LibraryManager::addBoardTo(const QString &libId, const BoardSpec &board) {
+	if (board.id.isEmpty()) {
+		return errorResult(QStringLiteral("基板 id が空です"));
+	}
+	const auto existing = library(libId);
+	if (!existing) {
+		return errorResult(QStringLiteral("ライブラリが見つかりません: %1").arg(libId));
+	}
+	auto lib = std::make_shared<Library>(*existing);
 	lib->boards.insert(board.id, std::make_shared<BoardSpec>(board));
 
 	if (!persist(*lib)) {
-		result.error = QStringLiteral("マイライブラリの保存に失敗しました");
-		return result;
+		return errorResult(QStringLiteral("ライブラリの保存に失敗しました"));
 	}
 	m_libraries.insert(lib->id, lib);
 
+	OpResult result;
 	result.ok = true;
 	result.libraryId = lib->id;
 	result.boardCount = 1;
@@ -294,28 +461,168 @@ LibraryManager::OpResult LibraryManager::addBoardToMyLibrary(const BoardSpec &bo
 	return result;
 }
 
-LibraryManager::OpResult LibraryManager::installBlib(const QString &blibFilePath) {
+bool LibraryManager::removeBoardFrom(const QString &libId, const QString &boardId) {
+	return mutateLibrary(libId, [&](Library &lib) {
+		if (!lib.boards.contains(boardId)) {
+			return false;
+		}
+		lib.boards.remove(boardId);
+		return true;
+	});
+}
+
+LibraryManager::OpResult LibraryManager::addPartToMyLibrary(const Part &part, const QString &categoryId) {
+	return addPartTo(myLibraryId(), part, categoryId);
+}
+
+LibraryManager::OpResult LibraryManager::addBoardToMyLibrary(const BoardSpec &board) {
+	return addBoardTo(myLibraryId(), board);
+}
+
+LibraryManager::OpResult LibraryManager::copyPartsBetween(const QString &srcLibId, const QStringList &partIds,
+														   const QString &dstLibId, const QString &dstCategoryId) {
+	const auto src = library(srcLibId);
+	const auto dstExisting = library(dstLibId);
+	if (!src || !dstExisting) {
+		return errorResult(QStringLiteral("ライブラリが見つかりません"));
+	}
+	auto dst = std::make_shared<Library>(*dstExisting);
+
+	QString cat = dstCategoryId;
+	if (cat.isEmpty() || !dst->category(cat)) {
+		if (!dst->category(uncategorizedCategoryId())) {
+			CategoryInfo uncategorized;
+			uncategorized.id = uncategorizedCategoryId();
+			uncategorized.name = QStringLiteral("未分類");
+			dst->categories.append(uncategorized);
+		}
+		cat = uncategorizedCategoryId();
+	}
+
+	int copied = 0;
+	for (const QString &partId : partIds) {
+		const auto part = src->part(partId);
+		if (!part) {
+			continue;
+		}
+		Part copy = *part;
+		copy.id = uniquePartIdIn(*dst, copy.id);
+		dst->parts.insert(copy.id, std::make_shared<Part>(copy));
+		dst->partCategory.insert(copy.id, cat);
+		++copied;
+	}
+	if (copied == 0) {
+		return errorResult(QStringLiteral("複製できる部品がありませんでした"));
+	}
+
+	if (!src->redistribution.allowed && dst->id != src->id) {
+		bool already = false;
+		for (const auto &b : dst->basedOn) {
+			if (b.libraryId == src->id) {
+				already = true;
+				break;
+			}
+		}
+		if (!already) {
+			BasedOn based;
+			based.libraryId = src->id;
+			based.name = src->name;
+			based.version = src->version;
+			based.licenseLabel = src->license.displayName();
+			dst->basedOn.append(based);
+		}
+	}
+
+	if (!persist(*dst)) {
+		return errorResult(QStringLiteral("ライブラリの保存に失敗しました"));
+	}
+	m_libraries.insert(dst->id, dst);
+
 	OpResult result;
-	auto lib = libraryio::importFromBlib(blibFilePath);
+	result.ok = true;
+	result.libraryId = dst->id;
+	result.partCount = copied;
+	emit librariesChanged();
+	return result;
+}
+
+LibraryManager::OpResult LibraryManager::copyBoardsBetween(const QString &srcLibId, const QStringList &boardIds,
+															const QString &dstLibId) {
+	const auto src = library(srcLibId);
+	const auto dstExisting = library(dstLibId);
+	if (!src || !dstExisting) {
+		return errorResult(QStringLiteral("ライブラリが見つかりません"));
+	}
+	auto dst = std::make_shared<Library>(*dstExisting);
+
+	int copied = 0;
+	for (const QString &boardId : boardIds) {
+		const auto board = src->board(boardId);
+		if (!board) {
+			continue;
+		}
+		BoardSpec copy = *board;
+		copy.id = uniqueBoardIdIn(*dst, copy.id);
+		dst->boards.insert(copy.id, std::make_shared<BoardSpec>(copy));
+		++copied;
+	}
+	if (copied == 0) {
+		return errorResult(QStringLiteral("複製できる基板がありませんでした"));
+	}
+
+	if (!src->redistribution.allowed && dst->id != src->id) {
+		bool already = false;
+		for (const auto &b : dst->basedOn) {
+			if (b.libraryId == src->id) {
+				already = true;
+				break;
+			}
+		}
+		if (!already) {
+			BasedOn based;
+			based.libraryId = src->id;
+			based.name = src->name;
+			based.version = src->version;
+			based.licenseLabel = src->license.displayName();
+			dst->basedOn.append(based);
+		}
+	}
+
+	if (!persist(*dst)) {
+		return errorResult(QStringLiteral("ライブラリの保存に失敗しました"));
+	}
+	m_libraries.insert(dst->id, dst);
+
+	OpResult result;
+	result.ok = true;
+	result.libraryId = dst->id;
+	result.boardCount = copied;
+	emit librariesChanged();
+	return result;
+}
+
+LibraryManager::OpResult LibraryManager::installBlib(const QString &blibFilePath) {
+	LoadResult loadResult;
+	auto lib = libraryio::importFromBlib(blibFilePath, &loadResult);
 	if (!lib) {
-		result.error = QStringLiteral(".blib を読み込めませんでした: %1").arg(blibFilePath);
-		return result;
+		return errorResult(loadResult.detail.isEmpty()
+								? QStringLiteral(".blib を読み込めませんでした: %1").arg(blibFilePath)
+								: QStringLiteral("%1\n%2").arg(loadResult.summary, loadResult.detail));
 	}
 	return installLibrary(*lib);
 }
 
 LibraryManager::OpResult LibraryManager::installLibrary(const Library &lib) {
-	OpResult result;
 	if (lib.id.isEmpty()) {
-		result.error = QStringLiteral("ライブラリ id が空です");
-		return result;
+		return errorResult(QStringLiteral("ライブラリ id が空です"));
 	}
 	if (lib.id == myLibraryId() || lib.id == passCompatId()) {
-		result.error = QStringLiteral("この id は予約されています: %1").arg(lib.id);
-		return result;
+		// 外部の .blib がこの id を騙ってビルトインライブラリを上書きすることを防ぐ。
+		return errorResult(QStringLiteral("この id は予約されています: %1").arg(lib.id));
 	}
 	if (m_libraries.contains(lib.id)) {
 		// 既にインストール済み。上書きはしない (壊れていない限りエラー扱いにはしない)。
+		OpResult result;
 		result.ok = true;
 		result.libraryId = lib.id;
 		const auto existing = m_libraries.value(lib.id);
@@ -326,13 +633,12 @@ LibraryManager::OpResult LibraryManager::installLibrary(const Library &lib) {
 	}
 
 	auto libPtr = std::make_shared<Library>(lib);
-	libPtr->readOnly = true;  // インストールしたライブラリは編集不可 (複製すれば編集可能)
 	if (!persist(*libPtr)) {
-		result.error = QStringLiteral("ライブラリの保存に失敗しました");
-		return result;
+		return errorResult(QStringLiteral("ライブラリの保存に失敗しました"));
 	}
 	m_libraries.insert(libPtr->id, libPtr);
 
+	OpResult result;
 	result.ok = true;
 	result.libraryId = libPtr->id;
 	result.partCount = libPtr->parts.size();
@@ -343,19 +649,15 @@ LibraryManager::OpResult LibraryManager::installLibrary(const Library &lib) {
 }
 
 LibraryManager::OpResult LibraryManager::duplicateLibrary(const QString &sourceLibraryId, const DuplicateSpec &spec) {
-	OpResult result;
 	const auto source = library(sourceLibraryId);
 	if (!source) {
-		result.error = QStringLiteral("複製元のライブラリが見つかりません: %1").arg(sourceLibraryId);
-		return result;
+		return errorResult(QStringLiteral("複製元のライブラリが見つかりません: %1").arg(sourceLibraryId));
 	}
 	if (spec.newId.isEmpty()) {
-		result.error = QStringLiteral("新しい id を指定してください");
-		return result;
+		return errorResult(QStringLiteral("新しい id を指定してください"));
 	}
 	if (m_libraries.contains(spec.newId)) {
-		result.error = QStringLiteral("id が既存のライブラリと重複しています: %1").arg(spec.newId);
-		return result;
+		return errorResult(QStringLiteral("id が既存のライブラリと重複しています: %1").arg(spec.newId));
 	}
 
 	auto lib = std::make_shared<Library>(*source);  // 部品・基板・カテゴリを丸ごとコピー
@@ -364,22 +666,22 @@ LibraryManager::OpResult LibraryManager::duplicateLibrary(const QString &sourceL
 	lib->author = spec.newAuthor;
 	lib->version = spec.newVersion;
 	lib->license = spec.newLicense;
-	lib->redistribution = redistributionRuleFor(spec.newLicense.kind);
-	lib->readOnly = false;
+	lib->redistribution =
+		spec.newLicense.kind == LicenseKind::Custom ? spec.newRedistribution : redistributionRuleFor(spec.newLicense.kind);
 
 	BasedOn based;
 	based.libraryId = source->id;
 	based.name = source->name;
 	based.version = source->version;
 	based.licenseLabel = source->license.displayName();
-	lib->basedOn = based;
+	lib->basedOn.append(based);
 
 	if (!persist(*lib)) {
-		result.error = QStringLiteral("ライブラリの保存に失敗しました");
-		return result;
+		return errorResult(QStringLiteral("ライブラリの保存に失敗しました"));
 	}
 	m_libraries.insert(lib->id, lib);
 
+	OpResult result;
 	result.ok = true;
 	result.libraryId = lib->id;
 	result.partCount = lib->parts.size();
@@ -389,39 +691,11 @@ LibraryManager::OpResult LibraryManager::duplicateLibrary(const QString &sourceL
 	return result;
 }
 
-bool LibraryManager::updateLibraryMetadata(const QString &id, const Library &updated) {
-	const auto existing = library(id);
-	if (!existing || existing->readOnly) {
-		return false;
-	}
-	auto lib = std::make_shared<Library>(updated);
-	lib->id = id;                        // id は変えさせない
-	lib->readOnly = existing->readOnly;  // 常に false のはずだが念のため踏襲する
-
-	if (!persist(*lib)) {
-		return false;
-	}
-	m_libraries.insert(id, lib);
-	emit librariesChanged();
-	return true;
-}
-
-bool LibraryManager::removeLibrary(const QString &id) {
-	if (id == myLibraryId() || id == passCompatId()) {
-		return false;
-	}
-	if (!m_libraries.contains(id)) {
-		return false;
-	}
-	QDir(libraryDir(id)).removeRecursively();
-	m_libraries.remove(id);
-	emit librariesChanged();
-	return true;
-}
-
 bool LibraryManager::exportLibrary(const QString &id, const QString &blibFilePath) const {
+	// Phase 14: 再配布不可でもバックアップ用途で書き出せる。再配布不可であることの
+	// 警告は呼び出し側 (UI) の責務とする。
 	const auto lib = library(id);
-	if (!lib || !lib->redistribution.allowed || id == myLibraryId()) {
+	if (!lib) {
 		return false;
 	}
 	return libraryio::exportToBlib(*lib, blibFilePath);

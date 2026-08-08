@@ -21,6 +21,7 @@ struct Placement {
 	QString refDes;
 	QString value;
 	bool labelsVisible = true;
+	bool visible = true;  // 表示/非表示 (オブジェクト一覧の目玉トグル用。false でも削除ではない)
 	int z = 0;  // 表示順。後に置かれたものが上 (PasS と同じ)
 };
 

@@ -6,15 +6,19 @@
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QMenu>
+#include <QStringList>
 #include <climits>
 
 #include "../../commands/placementcommands.h"
 #include "../../commands/wirecommands.h"
 #include "../../core/ids.h"
 #include "../../model/document.h"
+#include "../../model/librarymanager.h"
+#include "../../model/part.h"
 #include "../../render/boardscene.h"
 #include "../../render/items/placementitem.h"
 #include "../../render/items/wireitem.h"
+#include "../input/keymap.h"
 #include "snapengine.h"
 
 SelectTool::SelectTool(ToolContext *context) : QObject(nullptr), Tool(context) {
@@ -27,6 +31,7 @@ void SelectTool::activate() {
 	if (m_context->backScene) {
 		connect(m_context->backScene, &QGraphicsScene::selectionChanged, this, &SelectTool::onSelectionChanged);
 	}
+	emitSelectionSummary();
 }
 
 void SelectTool::deactivate() {
@@ -39,6 +44,7 @@ void SelectTool::deactivate() {
 	m_dragging = false;
 	m_dragEntries.clear();
 	clearNetHighlight();
+	emit selectionSummaryChanged(QString());
 }
 
 void SelectTool::onSelectionChanged() {
@@ -50,6 +56,24 @@ void SelectTool::onSelectionChanged() {
 		return;
 	}
 	syncSelectionAcrossScenes(senderScene);
+	emitSelectionSummary();
+}
+
+void SelectTool::emitSelectionSummary() {
+	const int partCount = selectedPlacementUuids().size();
+	const int wireCount = selectedWireUuids().size();
+	if (partCount == 0 && wireCount == 0) {
+		emit selectionSummaryChanged(QString());
+		return;
+	}
+	QStringList parts;
+	if (partCount > 0) {
+		parts << QObject::tr("部品%1").arg(partCount);
+	}
+	if (wireCount > 0) {
+		parts << QObject::tr("配線%1").arg(wireCount);
+	}
+	emit selectionSummaryChanged(QObject::tr("選択: %1").arg(parts.join(QStringLiteral(" / "))));
 }
 
 void SelectTool::syncSelectionAcrossScenes(BoardScene *changedScene) {
@@ -192,8 +216,17 @@ bool SelectTool::mousePress(BoardScene *scene, QGraphicsSceneMouseEvent *event) 
 
 	if (placementItem && target->isSelected()) {
 		m_dragging = true;
-		m_dragPressScenePos = event->scenePos();
-		m_dragAnchorStart = placementItem->placement()->pos;
+		m_dragPressModelPos = scene->toModel(event->scenePos());
+		// アンカー (基準点) のモデル座標を起点にする。部品原点 (画像左上) ではなく
+		// アンカーを格子にスナップすることで、ピンが穴からずれる問題を避ける (11-4)。
+		const auto placement = placementItem->placement();
+		QPoint anchor;
+		if (m_context->libraryManager) {
+			if (const auto part = m_context->libraryManager->resolvePart(placement->libraryId, placement->partId)) {
+				anchor = rotatePoint(part->resolveAnchor(), part->size(), placement->rot);
+			}
+		}
+		m_dragAnchorStart = placement->pos + anchor;
 		m_lastDragDelta = QPoint(0, 0);
 		m_dragEntries.clear();
 		for (const QString &uuid : selectedPlacementUuids()) {
@@ -211,8 +244,9 @@ bool SelectTool::mouseMove(BoardScene *scene, QGraphicsSceneMouseEvent *event) {
 		updateNetHighlight(scene, event);
 		return false;
 	}
-	const QPointF rawDelta = event->scenePos() - m_dragPressScenePos;
-	const QPoint proposedAnchor = SnapEngine::snapForPlacement(QPointF(m_dragAnchorStart) + rawDelta);
+	const QPointF rawDelta = scene->toModel(event->scenePos()) - m_dragPressModelPos;
+	const QPoint proposedAnchor =
+		m_context->snapEngine->snapToGrid(QPointF(m_dragAnchorStart) + rawDelta, m_context->snapEngine->placementStep());
 	m_lastDragDelta = proposedAnchor - m_dragAnchorStart;
 
 	for (const auto &entry : m_dragEntries) {
@@ -283,49 +317,41 @@ bool SelectTool::mouseDoubleClick(BoardScene *scene, QGraphicsSceneMouseEvent *e
 }
 
 bool SelectTool::keyPress(BoardScene *, QKeyEvent *event) {
-	if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
+	const Keymap &keymap = m_context->keymapOrDefault();
+	if (keymap.matchesKey(QStringLiteral("select.delete"), event)) {
 		deleteSelected();
 		return true;
 	}
-	if (event->key() == Qt::Key_R) {
+	if (keymap.matchesKey(QStringLiteral("select.rotate"), event)) {
 		rotateSelected();
 		return true;
 	}
-	if (event->key() == Qt::Key_F) {
+	if (keymap.matchesKey(QStringLiteral("select.flip"), event)) {
 		flipSelected();
 		return true;
 	}
-	if (event->modifiers() & Qt::ControlModifier) {
-		if (event->key() == Qt::Key_C) {
-			copySelected();
-			return true;
-		}
-		if (event->key() == Qt::Key_V) {
-			pasteWithOffset(QPoint(units::Pitch * 2, units::Pitch * 2));
-			return true;
-		}
+	if (keymap.matchesKey(QStringLiteral("select.copy"), event)) {
+		copySelected();
+		return true;
 	}
-	QPoint delta(0, 0);
-	bool isArrow = true;
-	switch (event->key()) {
-	case Qt::Key_Left:
-		delta = QPoint(-units::Pitch, 0);
-		break;
-	case Qt::Key_Right:
-		delta = QPoint(units::Pitch, 0);
-		break;
-	case Qt::Key_Up:
-		delta = QPoint(0, -units::Pitch);
-		break;
-	case Qt::Key_Down:
-		delta = QPoint(0, units::Pitch);
-		break;
-	default:
-		isArrow = false;
-		break;
+	if (keymap.matchesKey(QStringLiteral("select.paste"), event)) {
+		pasteWithOffset(QPoint(units::Pitch * 2, units::Pitch * 2));
+		return true;
 	}
-	if (isArrow) {
-		nudgeSelected(delta);
+	if (keymap.matchesKey(QStringLiteral("select.moveLeft"), event)) {
+		nudgeSelected(QPoint(-units::Pitch, 0));
+		return true;
+	}
+	if (keymap.matchesKey(QStringLiteral("select.moveRight"), event)) {
+		nudgeSelected(QPoint(units::Pitch, 0));
+		return true;
+	}
+	if (keymap.matchesKey(QStringLiteral("select.moveUp"), event)) {
+		nudgeSelected(QPoint(0, -units::Pitch));
+		return true;
+	}
+	if (keymap.matchesKey(QStringLiteral("select.moveDown"), event)) {
+		nudgeSelected(QPoint(0, units::Pitch));
 		return true;
 	}
 	return false;
@@ -366,7 +392,7 @@ bool SelectTool::contextMenu(BoardScene *scene, QGraphicsSceneContextMenuEvent *
 		QAction *pasteAction = menu.addAction(QObject::tr("貼り付け"));
 		QAction *chosen = menu.exec(event->screenPos());
 		if (chosen == pasteAction) {
-			pasteAt(event->scenePos());
+			pasteAt(scene->toModel(event->scenePos()));
 		}
 		return true;
 	}
@@ -492,7 +518,7 @@ void SelectTool::pasteWithOffset(QPoint offset) {
 	}
 }
 
-void SelectTool::pasteAt(QPointF scenePos) {
+void SelectTool::pasteAt(QPointF modelPos) {
 	if (m_context->clipboardPlacements.isEmpty() && m_context->clipboardWires.isEmpty()) {
 		return;
 	}
@@ -510,10 +536,27 @@ void SelectTool::pasteAt(QPointF scenePos) {
 	if (minPt.x() == INT_MAX) {
 		return;
 	}
-	const QPoint target = SnapEngine::snapForPlacement(scenePos);
+	const QPoint target = m_context->snapEngine->snapToGrid(modelPos, m_context->snapEngine->placementStep());
 	pasteWithOffset(target - minPt);
 }
 
-QString SelectTool::statusHint() const {
-	return QObject::tr("クリックで選択 / ドラッグで移動 / R:回転 F:表裏切替 Delete:削除 右クリック:メニュー");
+bool SelectTool::cancel() {
+	bool hadSelection = false;
+	for (BoardScene *scene : {m_context->frontScene, m_context->backScene}) {
+		if (scene && !scene->selectedItems().isEmpty()) {
+			hadSelection = true;
+		}
+	}
+	if (!hadSelection) {
+		return false;
+	}
+	if (m_context->frontScene) m_context->frontScene->clearSelection();
+	if (m_context->backScene) m_context->backScene->clearSelection();
+	return true;
+}
+
+QString SelectTool::statusHint(const Keymap &keymap) const {
+	return QObject::tr("クリックで選択 / ドラッグで移動 / %1:回転 %2:表裏切替 %3:削除 右クリック:メニュー")
+		.arg(keymap.displayFor(QStringLiteral("select.rotate")), keymap.displayFor(QStringLiteral("select.flip")),
+			 keymap.displayFor(QStringLiteral("select.delete")));
 }

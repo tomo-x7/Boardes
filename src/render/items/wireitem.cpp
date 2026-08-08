@@ -7,6 +7,9 @@ WireItem::WireItem(std::shared_ptr<const Wire> wire, QGraphicsItem *parent)
 	: QGraphicsItem(parent), m_wire(std::move(wire)) {
 	recomputeBounds();
 	setFlag(QGraphicsItem::ItemIsSelectable, true);
+	// 実際の表示可否は「レイヤ表示トグル」と「オブジェクト一覧の目玉トグル (wire->visible)」
+	// の両方の AND で決まる。両方を知っているのは BoardScene 側なので、初期状態も
+	// BoardScene::syncWires() が setVisible() で明示的に設定する (ここでは決めない)。
 }
 
 QColor WireItem::colorForLayer(WireLayer layer) {
@@ -66,6 +69,19 @@ void WireItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidge
 		painter->drawPath(path());
 	}
 
+	const qreal px = 1.0 / qMax(0.001, qAbs(painter->transform().m11()));
+
+	if (isSelected()) {
+		// 黒縁 (下敷き) + 黄色破線。線の色そのものより優先して視認性を確保する
+		// (明るい基板・暗い基板どちらの上でも見えるようにするため)。
+		QPen halo(Qt::black);
+		halo.setWidthF(3.5 * px);
+		halo.setCapStyle(Qt::RoundCap);
+		halo.setJoinStyle(Qt::RoundJoin);
+		painter->setPen(halo);
+		painter->drawPath(path());
+	}
+
 	QPen pen(colorForLayer(m_wire->layer));
 	pen.setWidthF(m_wire->layer == WireLayer::Outline ? 0.6 : 1.0);
 	pen.setCapStyle(Qt::RoundCap);
@@ -75,10 +91,21 @@ void WireItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidge
 	}
 	if (isSelected()) {
 		pen.setColor(Qt::yellow);
-		pen.setWidthF(pen.widthF() + 0.6);
+		pen.setStyle(Qt::DashLine);
+		pen.setWidthF(1.6 * px);
 	}
 	painter->setPen(pen);
 	painter->drawPath(path());
+
+	if (isSelected() && m_wire) {
+		// 頂点にハンドル。
+		painter->setPen(Qt::NoPen);
+		painter->setBrush(Qt::black);
+		const qreal hs = 3.5 * px;
+		for (const QPoint &p : m_wire->points) {
+			painter->drawRect(QRectF(p.x() - hs / 2, p.y() - hs / 2, hs, hs));
+		}
+	}
 }
 
 void WireItem::setNetHighlighted(bool on) {

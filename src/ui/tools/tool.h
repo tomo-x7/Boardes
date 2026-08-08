@@ -8,6 +8,7 @@ class BoardScene;
 class QGraphicsSceneMouseEvent;
 class QGraphicsSceneContextMenuEvent;
 class QKeyEvent;
+class Keymap;
 
 // 編集ツールの基底クラス。BoardScene からのマウス/キー入力を受け取り、
 // Document を QUndoCommand 経由で編集する。
@@ -56,8 +57,16 @@ public:
 		return false;
 	}
 
-	// ステータスバーに出す操作ヒント。
-	virtual QString statusHint() const = 0;
+	// ツール内部の途中状態 (作図中の配線・選択範囲など) を破棄する。破棄すべきものが
+	// あった場合のみ true を返す。false ならツール自体を解除してよい、という意味
+	// (ToolManager::cancelCurrent() が Esc の共通処理として使う)。
+	virtual bool cancel() {
+		return false;
+	}
+
+	// ステータスバーに出す操作ヒント。keymap のカスタマイズ結果を文言に反映させる
+	// (Phase 18)。GIMP 風のリアルタイム操作ヒント (左下) はここが唯一の情報源。
+	virtual QString statusHint(const Keymap &keymap) const = 0;
 
 protected:
 	ToolContext *m_context;

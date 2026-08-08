@@ -11,17 +11,19 @@
 #include "part.h"
 
 // ライブラリに設定できるライセンス。
+//
+// 方針: 手元にあるライブラリファイルはユーザーのものであり、バックアップや編集は
+// 常に自由にできる。それはそれとして、公開・再配布はライセンスで示された原作者の
+// 意向を尊重する (Phase 14)。派生物のライセンスを強制固定する仕組み (コピーレフト
+// 強制) は Boardes 側では持たない — 尊重すべきは「再配布してよいか」までであり、
+// 派生ライセンスの選択はユーザーの責任とする。選択肢が多すぎると分かりにくいため、
+// よく使われる5種類に絞ってある。
 enum class LicenseKind {
-	CC0_1_0,
-	CC_BY_4_0,
-	CC_BY_SA_4_0,
-	CC_BY_NC_4_0,
-	MIT,
-	Apache_2_0,
-	CERN_OHL_P,
-	CERN_OHL_S,
-	AllRightsReserved,
-	Custom,
+	CC0_1_0,            // 権利放棄。表示不要で自由に利用可
+	CC_BY_4_0,           // 表示すれば自由に利用可
+	MIT,                 // MIT License
+	AllRightsReserved,   // 全権利留保 (既定)。再配布不可
+	Custom,              // カスタム。再配布可否・表示義務は手動指定
 };
 
 QString licenseSpdxId(LicenseKind kind);       // Custom/AllRightsReserved は空文字
@@ -43,24 +45,19 @@ struct LicenseInfo {
 	}
 };
 
-// 複製・再配布に関するルール。ライセンスから自動導出されるが、
-// pass-compat のように明示的に上書きされる場合もあるため Library に保持する。
-enum class DerivativePolicy {
-	Any,            // 派生物のライセンスは自由に選べる
-	MustMatchSame,  // 派生物も同じライセンスに固定 (コピーレフト)
-	NcFamilyOnly,   // 派生物は非営利系ライセンスに固定
-};
-
+// 複製・再配布に関するルール。ライセンスから自動導出されるが、pass-compat のように
+// 明示的に上書きされる場合もあるため Library に保持する。
 struct RedistributionRule {
 	bool allowed = false;
 	bool attributionRequired = false;
-	DerivativePolicy derivativePolicy = DerivativePolicy::Any;
 };
 
-// ライセンス種別から複製時のデフォルトルールを導出する。
+// ライセンス種別から複製時のデフォルトルールを導出する。kind==Custom のときは
+// 「不可」を安全側の既定にする (呼び出し側の UI がユーザーに明示選択させること)。
 RedistributionRule redistributionRuleFor(LicenseKind kind);
 
-// 複製元ライブラリの記録。
+// 複製元・取り込み元ライブラリの記録。1つとは限らない (他ライブラリから部品を
+// 複製した場合など、複数の由来を持ちうる) ので配列で持つ。
 struct BasedOn {
 	QString libraryId;
 	QString name;
@@ -76,6 +73,9 @@ struct CategoryInfo {
 };
 
 // 部品・基板・カテゴリをまとめて管理する配布単位。
+//
+// readOnly は廃止した (Phase 14) — 手元にあるライブラリはすべて編集・バックアップが
+// 自由。公開・再配布の可否だけを redistribution.allowed で管理する。
 class Library {
 public:
 	QString id;
@@ -87,8 +87,7 @@ public:
 	QString description;
 	LicenseInfo license;
 	RedistributionRule redistribution;
-	bool readOnly = false;
-	std::optional<BasedOn> basedOn;
+	QVector<BasedOn> basedOn;
 
 	QVector<CategoryInfo> categories;
 	QMap<QString, std::shared_ptr<Part>> parts;        // partId -> Part

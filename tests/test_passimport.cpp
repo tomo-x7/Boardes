@@ -167,8 +167,11 @@ void TestPassImport::decodesSimplePinPositions() {
 	QCOMPARE(pin2->number, 2);
 	QCOMPARE(pin2->drill, 0);
 
-	// マーカー画素はクロマキー背景色だったので、アートワーク上では透明になっているはず。
-	QCOMPARE(part.artwork.image.pixelColor(2, 3).alpha(), 0);
+	// マーカー画素はもう近傍色に埋め戻さない (Phase 13)。元のマーカー色のまま、
+	// 不透明で残っているはず (Boardes 側の「接点マーカー表示」機能がこの上に重ねて
+	// 表示する前提のため)。
+	QCOMPARE(part.artwork.image.pixelColor(2, 3), QColor(254, 0, 0));
+	QCOMPARE(part.artwork.image.pixelColor(2, 3).alpha(), 255);
 }
 
 void TestPassImport::importedPartDoesNotRecordChromaKeyButStaysTransparent() {

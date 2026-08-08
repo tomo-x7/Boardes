@@ -5,7 +5,6 @@
 #include <QColor>
 #include <QHeaderView>
 #include <QLabel>
-#include <QPushButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -34,14 +33,10 @@ DrcPanel::DrcPanel(QWidget *parent) : QWidget(parent) {
 	m_tree->setSelectionMode(QAbstractItemView::SingleSelection);
 	m_tree->setAlternatingRowColors(true);
 
-	m_refreshButton = new QPushButton(QStringLiteral("再検査"), this);
-	connect(m_refreshButton, &QPushButton::clicked, this, &DrcPanel::refresh);
-
 	auto *layout = new QVBoxLayout(this);
 	layout->setContentsMargins(4, 4, 4, 4);
 	layout->addWidget(m_summaryLabel);
 	layout->addWidget(m_tree, /*stretch=*/1);
-	layout->addWidget(m_refreshButton);
 
 	connect(m_tree, &QTreeWidget::itemClicked, this, &DrcPanel::onItemClicked);
 }

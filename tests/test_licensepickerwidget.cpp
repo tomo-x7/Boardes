@@ -10,6 +10,8 @@ private slots:
 	void roundTripsCustomFields();
 	void allowedKindsRestrictsSelection();
 	void allowedKindsFallsBackToFirstWhenCurrentNotAllowed();
+	void customKindDerivesRedistributionFromCheckboxes();
+	void nonCustomKindIgnoresManualRedistribution();
 };
 
 void TestLicensePickerWidget::roundTripsSimpleKind() {
@@ -41,11 +43,11 @@ void TestLicensePickerWidget::roundTripsCustomFields() {
 void TestLicensePickerWidget::allowedKindsRestrictsSelection() {
 	LicensePickerWidget picker;
 	LicenseInfo info;
-	info.kind = LicenseKind::CC_BY_SA_4_0;
+	info.kind = LicenseKind::CC0_1_0;
 	picker.setLicense(info);
-	// CC-BY-SA-4.0 だけに制限しても、現在の選択がそのリストに含まれているので維持される。
-	picker.setAllowedKinds({LicenseKind::CC_BY_SA_4_0});
-	QCOMPARE(static_cast<int>(picker.license().kind), static_cast<int>(LicenseKind::CC_BY_SA_4_0));
+	// CC0-1.0 だけに制限しても、現在の選択がそのリストに含まれているので維持される。
+	picker.setAllowedKinds({LicenseKind::CC0_1_0});
+	QCOMPARE(static_cast<int>(picker.license().kind), static_cast<int>(LicenseKind::CC0_1_0));
 }
 
 void TestLicensePickerWidget::allowedKindsFallsBackToFirstWhenCurrentNotAllowed() {
@@ -53,9 +55,37 @@ void TestLicensePickerWidget::allowedKindsFallsBackToFirstWhenCurrentNotAllowed(
 	LicenseInfo info;
 	info.kind = LicenseKind::MIT;
 	picker.setLicense(info);
-	// MIT は許可リストに含まれないので、リストの先頭 (CC_BY_NC_4_0) にフォールバックする。
-	picker.setAllowedKinds({LicenseKind::CC_BY_NC_4_0, LicenseKind::Custom});
-	QCOMPARE(static_cast<int>(picker.license().kind), static_cast<int>(LicenseKind::CC_BY_NC_4_0));
+	// MIT は許可リストに含まれないので、リストの先頭 (AllRightsReserved) にフォールバックする。
+	picker.setAllowedKinds({LicenseKind::AllRightsReserved, LicenseKind::Custom});
+	QCOMPARE(static_cast<int>(picker.license().kind), static_cast<int>(LicenseKind::AllRightsReserved));
+}
+
+void TestLicensePickerWidget::customKindDerivesRedistributionFromCheckboxes() {
+	LicensePickerWidget picker;
+	LicenseInfo info;
+	info.kind = LicenseKind::Custom;
+	picker.setLicense(info);
+	RedistributionRule rule;
+	rule.allowed = true;
+	rule.attributionRequired = true;
+	picker.setRedistributionRule(rule);
+
+	const RedistributionRule result = picker.redistributionRule();
+	QVERIFY(result.allowed);
+	QVERIFY(result.attributionRequired);
+}
+
+void TestLicensePickerWidget::nonCustomKindIgnoresManualRedistribution() {
+	LicensePickerWidget picker;
+	LicenseInfo info;
+	info.kind = LicenseKind::CC0_1_0;
+	picker.setLicense(info);
+	// Custom 以外は redistributionRuleFor() の固定値を使う。チェックボックスの状態には
+	// 左右されない (CC0 は表示不要・再配布可のはず)。
+	picker.setRedistributionRule(RedistributionRule{});  // allowed=false, attributionRequired=false
+	const RedistributionRule result = picker.redistributionRule();
+	QVERIFY(result.allowed);
+	QVERIFY(!result.attributionRequired);
 }
 
 QTEST_MAIN(TestLicensePickerWidget)

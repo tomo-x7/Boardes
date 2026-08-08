@@ -3,6 +3,7 @@
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSet>
 
 #include "jsonutil.h"
 
@@ -142,6 +143,81 @@ BoardSpec fromJsonObject(const QJsonObject &obj) {
 	return board;
 }
 
+namespace {
+LoadResult validateColor(const QJsonValue &v, const QString &path) {
+	QColor c(v.toString());
+	if (!c.isValid()) {
+		return LoadResult::failure(QStringLiteral("ファイルが壊れています"),
+									QStringLiteral("%1: 色として解釈できません (%2)").arg(path, v.toString()));
+	}
+	return LoadResult::success();
+}
+}  // namespace
+
+LoadResult validateJson(const QJsonObject &obj, const QString &path) {
+	if (auto r = validate::schemaField(obj, QStringLiteral("board"), SchemaVersion); !r) {
+		return r;
+	}
+	if (auto r = validate::intPair(obj["size"], path + QStringLiteral(".size")); !r) {
+		return r;
+	}
+
+	if (auto r = validate::object(obj["grid"], path + QStringLiteral(".grid")); !r) return r;
+	const QJsonObject grid = obj["grid"].toObject();
+	if (grid["cols"].toInt(-1) < 0 || grid["rows"].toInt(-1) < 0) {
+		return LoadResult::failure(QStringLiteral("ファイルが壊れています"),
+									QStringLiteral("%1.grid.cols/rows が不正です").arg(path));
+	}
+	if (grid["pitch"].toInt(0) < 1) {
+		return LoadResult::failure(QStringLiteral("ファイルが壊れています"),
+									QStringLiteral("%1.grid.pitch は1以上である必要があります").arg(path));
+	}
+	if (auto r = validate::intPair(grid["origin"], path + QStringLiteral(".grid.origin")); !r) return r;
+
+	if (auto r = validate::object(obj["pad"], path + QStringLiteral(".pad")); !r) return r;
+	static const QSet<QString> kKnownPadShapes = {QStringLiteral("none"), QStringLiteral("round"),
+												  QStringLiteral("square")};
+	if (!kKnownPadShapes.contains(obj["pad"].toObject()["shape"].toString())) {
+		return LoadResult::failure(QStringLiteral("ファイルが壊れています"),
+									QStringLiteral("%1.pad.shape が未知の値です").arg(path));
+	}
+
+	if (auto r = validate::object(obj["copper"], path + QStringLiteral(".copper")); !r) return r;
+	static const QSet<QString> kKnownCopperTypes = {QStringLiteral("none"), QStringLiteral("padPerHole"),
+													QStringLiteral("stripHorizontal"),
+													QStringLiteral("stripVertical")};
+	if (!kKnownCopperTypes.contains(obj["copper"].toObject()["type"].toString())) {
+		return LoadResult::failure(QStringLiteral("ファイルが壊れています"),
+									QStringLiteral("%1.copper.type が未知の値です").arg(path));
+	}
+
+	if (obj.contains("colors")) {
+		if (auto r = validate::object(obj["colors"], path + QStringLiteral(".colors")); !r) return r;
+		const QJsonObject colors = obj["colors"].toObject();
+		for (const QString &key : {QStringLiteral("substrate"), QStringLiteral("pad"), QStringLiteral("copper")}) {
+			if (colors.contains(key)) {
+				if (auto r = validateColor(colors[key], path + QStringLiteral(".colors.") + key); !r) return r;
+			}
+		}
+	}
+
+	if (obj.contains("background")) {
+		if (auto r = validate::object(obj["background"], path + QStringLiteral(".background")); !r) return r;
+		const QJsonObject bg = obj["background"].toObject();
+		for (const QString &side : {QStringLiteral("front"), QStringLiteral("back")}) {
+			if (!bg.contains(side)) continue;
+			if (auto r = validate::object(bg[side], path + QStringLiteral(".background.") + side); !r) return r;
+			const QJsonObject art = bg[side].toObject();
+			if (auto r = validate::pngBase64(art["data"].toString(), path + QStringLiteral(".background.") + side);
+				!r) {
+				return r;
+			}
+		}
+	}
+
+	return LoadResult::success();
+}
+
 bool save(const BoardSpec &board, const QString &filePath) {
 	QFile f(filePath);
 	if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -151,14 +227,26 @@ bool save(const BoardSpec &board, const QString &filePath) {
 	return true;
 }
 
-std::optional<BoardSpec> load(const QString &filePath) {
+std::optional<BoardSpec> load(const QString &filePath, LoadResult *errorOut) {
 	QFile f(filePath);
 	if (!f.open(QIODevice::ReadOnly)) {
+		if (errorOut) {
+			*errorOut = LoadResult::failure(QStringLiteral("ファイルを開けません"),
+											QStringLiteral("ファイルを読み込めませんでした: %1").arg(filePath));
+		}
 		return std::nullopt;
 	}
 	QJsonParseError err;
 	const QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &err);
 	if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+		if (errorOut) {
+			*errorOut = LoadResult::failure(QStringLiteral("ファイルが壊れています"),
+											QStringLiteral("JSON として解析できません: %1").arg(err.errorString()));
+		}
+		return std::nullopt;
+	}
+	if (const auto r = validateJson(doc.object(), QStringLiteral("board")); !r) {
+		if (errorOut) *errorOut = r;
 		return std::nullopt;
 	}
 	return fromJsonObject(doc.object());

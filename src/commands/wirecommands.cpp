@@ -61,3 +61,25 @@ void ChangeWireLayerCommand::undo() {
 	}
 	m_ctx->syncBothScenesWires();
 }
+
+SetWireVisibleCommand::SetWireVisibleCommand(ToolContext *ctx, const QString &uuid, bool oldVisible, bool newVisible,
+											 QUndoCommand *parent)
+	: QUndoCommand(newVisible ? QObject::tr("配線を表示") : QObject::tr("配線を非表示"), parent), m_ctx(ctx),
+	  m_uuid(uuid), m_oldVisible(oldVisible), m_newVisible(newVisible) {
+}
+
+void SetWireVisibleCommand::redo() {
+	const int idx = m_ctx->document->indexOfWire(m_uuid);
+	if (idx >= 0) {
+		m_ctx->document->wires[idx]->visible = m_newVisible;
+	}
+	m_ctx->syncBothScenesWires();
+}
+
+void SetWireVisibleCommand::undo() {
+	const int idx = m_ctx->document->indexOfWire(m_uuid);
+	if (idx >= 0) {
+		m_ctx->document->wires[idx]->visible = m_oldVisible;
+	}
+	m_ctx->syncBothScenesWires();
+}

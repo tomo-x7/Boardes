@@ -12,9 +12,8 @@ class TestDuplicateLibraryDialog : public QObject {
 
 private slots:
 	void prefillsDifferFromSource();
-	void copyleftSourceLocksDerivativeLicense();
-	void ncFamilySourceRestrictsToNcOrCustom();
-	void freelyRedistributableSourceAllowsAnyLicense();
+	void licenseSelectionIsNeverRestrictedBySource();
+	void customLicenseInheritsSourceRedistributionAsStartingPoint();
 	void validationBlocksSameValuesAsSource();
 	void validationPassesWhenAllFieldsDiffer();
 
@@ -42,41 +41,9 @@ void TestDuplicateLibraryDialog::prefillsDifferFromSource() {
 	QCOMPARE(spec.newVersion, QStringLiteral("1.0.0"));  // バージョンだけは元と偶然同じ既定値
 }
 
-void TestDuplicateLibraryDialog::copyleftSourceLocksDerivativeLicense() {
-	RedistributionRule rule = redistributionRuleFor(LicenseKind::CC_BY_SA_4_0);
-	QCOMPARE(static_cast<int>(rule.derivativePolicy), static_cast<int>(DerivativePolicy::MustMatchSame));
-	const Library source = makeSource(LicenseKind::CC_BY_SA_4_0, rule);
-
-	DuplicateLibraryDialog dialog(source);
-	auto *picker = dialog.findChild<LicensePickerWidget *>();
-	QVERIFY(picker != nullptr);
-	// CC-BY-SA-4.0 に固定されているはず。
-	QCOMPARE(static_cast<int>(picker->license().kind), static_cast<int>(LicenseKind::CC_BY_SA_4_0));
-	// 他のライセンスに変えようとしても選択肢に無い (許可リストがロックされている)。
-	LicenseInfo tryOther;
-	tryOther.kind = LicenseKind::MIT;
-	picker->setLicense(tryOther);
-	QCOMPARE(static_cast<int>(picker->license().kind), static_cast<int>(LicenseKind::CC_BY_SA_4_0));
-}
-
-void TestDuplicateLibraryDialog::ncFamilySourceRestrictsToNcOrCustom() {
-	const RedistributionRule rule = redistributionRuleFor(LicenseKind::CC_BY_NC_4_0);
-	QCOMPARE(static_cast<int>(rule.derivativePolicy), static_cast<int>(DerivativePolicy::NcFamilyOnly));
-	const Library source = makeSource(LicenseKind::CC_BY_NC_4_0, rule);
-
-	DuplicateLibraryDialog dialog(source);
-	auto *picker = dialog.findChild<LicensePickerWidget *>();
-	QVERIFY(picker != nullptr);
-	LicenseInfo tryMit;
-	tryMit.kind = LicenseKind::MIT;
-	picker->setLicense(tryMit);
-	// MIT は許可されないので、NC系 (CC_BY_NC_4_0) にフォールバックする。
-	QCOMPARE(static_cast<int>(picker->license().kind), static_cast<int>(LicenseKind::CC_BY_NC_4_0));
-}
-
-void TestDuplicateLibraryDialog::freelyRedistributableSourceAllowsAnyLicense() {
-	// 再配布不可の元 (例: PasS互換) は、複製物のライセンスを制限しない
-	// (独立した創作物として利用者の責任で新しくライセンスを設定できる)。
+void TestDuplicateLibraryDialog::licenseSelectionIsNeverRestrictedBySource() {
+	// 派生ライセンス強制の仕組みは廃止した (Phase 14)。元が再配布不可 (例: PasS互換) でも、
+	// 複製物のライセンスは自由に選べる — 独立した創作物として利用者の責任で設定する。
 	RedistributionRule rule;
 	rule.allowed = false;
 	const Library source = makeSource(LicenseKind::Custom, rule);
@@ -88,6 +55,23 @@ void TestDuplicateLibraryDialog::freelyRedistributableSourceAllowsAnyLicense() {
 	tryMit.kind = LicenseKind::MIT;
 	picker->setLicense(tryMit);
 	QCOMPARE(static_cast<int>(picker->license().kind), static_cast<int>(LicenseKind::MIT));
+}
+
+void TestDuplicateLibraryDialog::customLicenseInheritsSourceRedistributionAsStartingPoint() {
+	// 元が Custom ライセンスなら、その再配布ルールをチェックボックスの初期値として
+	// 引き継いでおく (複製後すぐに何もかも初期化されるのを避けるため)。
+	RedistributionRule rule;
+	rule.allowed = true;
+	rule.attributionRequired = true;
+	const Library source = makeSource(LicenseKind::Custom, rule);
+
+	DuplicateLibraryDialog dialog(source);
+	auto *picker = dialog.findChild<LicensePickerWidget *>();
+	QVERIFY(picker != nullptr);
+	QCOMPARE(static_cast<int>(picker->license().kind), static_cast<int>(LicenseKind::Custom));
+	const RedistributionRule result = picker->redistributionRule();
+	QVERIFY(result.allowed);
+	QVERIFY(result.attributionRequired);
 }
 
 void TestDuplicateLibraryDialog::validationBlocksSameValuesAsSource() {

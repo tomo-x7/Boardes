@@ -13,6 +13,13 @@ enum class Side {
 	Back,
 };
 
+// 裏面ビューの見え方。表面ビューには影響しない。
+enum class BackViewMode {
+	MirrorX,  // 裏から見た向き (左右反転) — 既定。実際に基板をひっくり返したときの見え方
+	Through,  // 透過して見た向き (左右そのまま、レントゲンのように透かして見た状態)
+	MirrorY,  // 裏から見た向き (上下反転)
+};
+
 enum class Rotation {
 	R0 = 0,
 	R90 = 90,

@@ -157,3 +157,25 @@ void SetPlacementLabelCommand::undo() {
 	}
 	m_ctx->syncBothScenesPlacements();
 }
+
+SetPlacementVisibleCommand::SetPlacementVisibleCommand(ToolContext *ctx, const QString &uuid, bool oldVisible,
+														bool newVisible, QUndoCommand *parent)
+	: QUndoCommand(newVisible ? QObject::tr("部品を表示") : QObject::tr("部品を非表示"), parent), m_ctx(ctx),
+	  m_uuid(uuid), m_oldVisible(oldVisible), m_newVisible(newVisible) {
+}
+
+void SetPlacementVisibleCommand::redo() {
+	const int idx = m_ctx->document->indexOfPlacement(m_uuid);
+	if (idx >= 0) {
+		m_ctx->document->placements[idx]->visible = m_newVisible;
+	}
+	m_ctx->syncBothScenesPlacements();
+}
+
+void SetPlacementVisibleCommand::undo() {
+	const int idx = m_ctx->document->indexOfPlacement(m_uuid);
+	if (idx >= 0) {
+		m_ctx->document->placements[idx]->visible = m_oldVisible;
+	}
+	m_ctx->syncBothScenesPlacements();
+}

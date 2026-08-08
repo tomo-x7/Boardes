@@ -6,6 +6,8 @@
 #include <QWheelEvent>
 #include <cmath>
 
+#include "boardscene.h"
+
 namespace {
 constexpr qreal kZoomStep = 1.15;
 constexpr qreal kMinZoom = 0.1;
@@ -25,6 +27,25 @@ BoardView::BoardView(QWidget *parent) : QGraphicsView(parent) {
 	setFrameShape(QFrame::NoFrame);
 	setBackgroundBrush(QColor(60, 60, 60));
 	m_dragModeBeforeSpace = dragMode();
+	// Space 押下中のパン (ScrollHandDrag への切替) にはビューがフォーカスを持てる
+	// 必要がある。
+	setFocusPolicy(Qt::StrongFocus);
+}
+
+QPointF BoardView::viewCenterModel() const {
+	auto *bs = qobject_cast<BoardScene *>(scene());
+	if (!bs) {
+		return QPointF();
+	}
+	return bs->toModel(mapToScene(viewport()->rect().center()));
+}
+
+void BoardView::centerOnModel(QPointF modelPos) {
+	auto *bs = qobject_cast<BoardScene *>(scene());
+	if (!bs) {
+		return;
+	}
+	centerOn(bs->fromModel(modelPos));
 }
 
 void BoardView::setZoom(qreal factor) {
@@ -54,7 +75,12 @@ void BoardView::fitBoardToWindow() {
 	if (!scene()) {
 		return;
 	}
-	fitInView(sceneRect(), Qt::KeepAspectRatio);
+	auto *bs = qobject_cast<BoardScene *>(scene());
+	const QRectF target = (bs && !bs->boardRect().isEmpty()) ? bs->boardRect() : sceneRect();
+	if (target.isEmpty()) {
+		return;
+	}
+	fitInView(target, Qt::KeepAspectRatio);
 	m_zoom = transform().m11();
 	emit zoomChanged(m_zoom);
 }
@@ -75,7 +101,8 @@ void BoardView::beginPan(const QPoint &pos) {
 }
 
 void BoardView::mousePressEvent(QMouseEvent *event) {
-	if (event->button() == Qt::MiddleButton) {
+	if (keymapOrDefault().matchesMouseButton(QStringLiteral("view.pan"), event->button(), event->modifiers(),
+											 InputKind::MouseDrag)) {
 		beginPan(event->pos());
 		event->accept();
 		return;
@@ -96,7 +123,8 @@ void BoardView::mouseMoveEvent(QMouseEvent *event) {
 }
 
 void BoardView::mouseReleaseEvent(QMouseEvent *event) {
-	if (m_panning && event->button() == Qt::MiddleButton) {
+	if (m_panning && keymapOrDefault().matchesMouseButton(QStringLiteral("view.pan"), event->button(),
+														   event->modifiers(), InputKind::MouseDrag)) {
 		m_panning = false;
 		setCursor(m_spaceHeld ? Qt::OpenHandCursor : Qt::ArrowCursor);
 		event->accept();
@@ -106,29 +134,33 @@ void BoardView::mouseReleaseEvent(QMouseEvent *event) {
 }
 
 void BoardView::keyPressEvent(QKeyEvent *event) {
-	if (event->key() == Qt::Key_Space && !event->isAutoRepeat() && !m_spaceHeld) {
+	const Keymap &keymap = keymapOrDefault();
+	if (keymap.matchesKey(QStringLiteral("view.panHold"), event) && !event->isAutoRepeat() && !m_spaceHeld) {
 		m_spaceHeld = true;
 		m_dragModeBeforeSpace = dragMode();
 		setDragMode(QGraphicsView::ScrollHandDrag);
 		event->accept();
 		return;
 	}
-	if (event->modifiers() & Qt::ControlModifier) {
-		if (event->key() == Qt::Key_0) {
-			fitBoardToWindow();
-			event->accept();
-			return;
-		}
+	if (keymap.matchesKey(QStringLiteral("view.fit"), event)) {
+		fitBoardToWindow();
+		event->accept();
+		return;
 	}
 	QGraphicsView::keyPressEvent(event);
 }
 
 void BoardView::keyReleaseEvent(QKeyEvent *event) {
-	if (event->key() == Qt::Key_Space && !event->isAutoRepeat()) {
+	if (keymapOrDefault().matchesKey(QStringLiteral("view.panHold"), event) && !event->isAutoRepeat()) {
 		m_spaceHeld = false;
 		setDragMode(m_dragModeBeforeSpace);
 		event->accept();
 		return;
 	}
 	QGraphicsView::keyReleaseEvent(event);
+}
+
+void BoardView::focusInEvent(QFocusEvent *event) {
+	QGraphicsView::focusInEvent(event);
+	emit focusReceived(this);
 }

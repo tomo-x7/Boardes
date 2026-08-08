@@ -2,6 +2,8 @@
 // boardes_core (ライブラリ本体) に対して単発でリンクする、テストスイートの一部ではない
 // 開発ツール。実アプリの各画面を実際に構築・表示・グラブして design/screenshots/*.png に
 // 書き出す。CMake のビルドツリーには含めない (テストではないため)。
+// Phase 20 で、Phase 10〜19 の UI 変更 (ライブラリ管理の全面刷新、操作/ツールバーの
+// カスタマイズ画面の新規追加等) に合わせて更新した。
 //
 // ビルド (プロジェクトルートで、事前に `cmake --build build` 済みであること):
 //   g++ -DQT_CORE_LIB -DQT_GUI_LIB -DQT_SVG_LIB -DQT_WIDGETS_LIB -DQT_TESTLIB_LIB \
@@ -36,10 +38,15 @@
 #include "ui/boardeditordialog.h"
 #include "ui/duplicatelibrarydialog.h"
 #include "ui/exportimageoptionsdialog.h"
+#include "ui/exportpackagedialog.h"
+#include "ui/input/keymap.h"
+#include "ui/input/keymapdialog.h"
 #include "ui/librarymanagerdialog.h"
 #include "ui/librarymetadatadialog.h"
 #include "ui/mainwindow.h"
 #include "ui/parteditordialog.h"
+#include "ui/partpickerdialog.h"
+#include "ui/toolbarcustomizedialog.h"
 
 namespace {
 
@@ -80,14 +87,14 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	// --- 1. メインウィンドウ (DRC タブ) ---
+	// --- 1. メインウィンドウ (オブジェクトタブ。Phase 15 で右ドックの先頭に追加) ---
 	{
 		MainWindow w;
 		w.resize(1500, 950);
-		shoot(w, QStringLiteral("main-window-drc.png"));
+		shoot(w, QStringLiteral("main-window-objects.png"));
 	}
 
-	// --- 2. メインウィンドウ (統計タブ) ---
+	// --- 2. メインウィンドウ (DRC タブ) ---
 	{
 		MainWindow w;
 		w.resize(1500, 950);
@@ -97,17 +104,49 @@ int main(int argc, char **argv) {
 			tabs->setCurrentIndex(1);
 		}
 		const QPixmap pm = w.grab();
+		pm.save(kOutDir + QStringLiteral("main-window-drc.png"));
+		w.close();
+	}
+
+	// --- 3. メインウィンドウ (統計タブ) ---
+	{
+		MainWindow w;
+		w.resize(1500, 950);
+		w.show();
+		QTest::qWaitForWindowExposed(&w);
+		if (auto *tabs = w.findChild<QTabWidget *>()) {
+			tabs->setCurrentIndex(2);
+		}
+		const QPixmap pm = w.grab();
 		pm.save(kOutDir + QStringLiteral("main-window-stats.png"));
 		w.close();
 	}
 
-	// --- 3. About ---
+	// --- 4. About ---
 	{
 		About w;
 		shoot(w, QStringLiteral("about.png"));
 	}
 
-	// --- 4. 基板エディタ (実際の PasS 基板 BMP を背景画像として添付した状態) ---
+	// --- 5. 基板エディタ: パラメトリックモード (画像なし。パッド/銅箔/色を手で指定) ---
+	{
+		BoardEditorDialog w;
+		BoardSpec sample;
+		sample.id = QStringLiteral("param-sample");
+		sample.name = QStringLiteral("パラメトリック基板サンプル");
+		sample.cols = 20;
+		sample.rows = 15;
+		sample.pitch = 10;
+		sample.origin = QPoint(10, 10);
+		sample.padShape = PadShape::Round;
+		sample.padDiameter = 6;
+		sample.holeDiameter = 3;
+		sample.copper = CopperPattern::PadPerHole;
+		w.setBoard(sample);
+		shoot(w, QStringLiteral("board-editor.png"));
+	}
+
+	// --- 6. 基板エディタ: 画像モード (実際の PasS 基板 BMP を背景画像として添付) ---
 	{
 		BoardEditorDialog w;
 		BoardSpec sample;
@@ -126,10 +165,10 @@ int main(int argc, char **argv) {
 			sample.backgroundBack = Artwork::fromImageAsIs(back);
 		}
 		w.setBoard(sample);
-		shoot(w, QStringLiteral("board-editor.png"));
+		shoot(w, QStringLiteral("board-editor-image-mode.png"));
 	}
 
-	// --- 5. 部品エディタ (DIP-14 サンプル) ---
+	// --- 7. 部品エディタ (DIP-14 サンプル。基準点は既定の自動 (ピン1)) ---
 	{
 		PartEditorDialog w;
 		Part p;
@@ -151,7 +190,7 @@ int main(int argc, char **argv) {
 		shoot(w, QStringLiteral("part-editor.png"));
 	}
 
-	// --- 6〜8. ライブラリ関連ダイアログ (実際の LibraryManager 状態を使う) ---
+	// --- 8〜10. ライブラリ関連ダイアログ (実際の LibraryManager 状態を使う) ---
 	{
 		LibraryManager mgr;
 		mgr.loadAll();
@@ -173,12 +212,37 @@ int main(int argc, char **argv) {
 				shoot(w, QStringLiteral("duplicate-library.png"));
 			}
 		}
+		// --- 11. 部品ピッカー (「他ライブラリから複製」用。新規) ---
+		{
+			PartPickerDialog w(&mgr, LibraryManager::myLibraryId());
+			shoot(w, QStringLiteral("part-picker.png"));
+		}
+		// --- 12. パッケージエクスポート (依存ライブラリの同梱可否を選ぶ。新規) ---
+		{
+			ExportPackageDialog w(&mgr, {LibraryManager::passCompatId(), LibraryManager::myLibraryId()});
+			shoot(w, QStringLiteral("export-package.png"));
+		}
 	}
 
-	// --- 9. 画像エクスポート設定 ---
+	// --- 13. 画像エクスポート設定 ---
 	{
 		ExportImageOptionsDialog w;
 		shoot(w, QStringLiteral("export-image-options.png"));
+	}
+
+	// --- 14. 操作のカスタマイズ (ショートカット/マウス割り当て。新規) ---
+	{
+		Keymap keymap;
+		keymap.load();
+		KeymapDialog w(&keymap);
+		shoot(w, QStringLiteral("keymap-settings.png"));
+	}
+
+	// --- 15. ツールバーのカスタマイズ (LibreOffice 風。新規) ---
+	{
+		MainWindow mw;  // 実際に構築されたツールバー・ActionRegistry を使うため
+		ToolbarCustomizeDialog w(&mw.actionRegistry());
+		shoot(w, QStringLiteral("toolbar-customize.png"));
 	}
 
 	return 0;
