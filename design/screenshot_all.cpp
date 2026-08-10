@@ -19,8 +19,9 @@
 //
 // 実行 (実データを使うので QT_QPA_PLATFORM=offscreen 必須、XDG_DATA_HOME は隔離推奨):
 //   XDG_DATA_HOME=$(mktemp -d) QT_QPA_PLATFORM=offscreen /tmp/screenshot_all
-// ダークテーマで撮る場合は環境変数 BOARDES_SCREENSHOT_THEME_DARK=1 を追加する
-// (design/screenshots/ にはこれまでどおりライトテーマ版だけを置く)。
+// ダークテーマで撮る場合は環境変数 BOARDES_SCREENSHOT_THEME_DARK=1 を追加する。ファイル名に
+// "-dark" が挟まる (例: main-window-drc.png → main-window-drc-dark.png) ので、ライト版を
+// 上書きせず両方 design/screenshots/ に共存できる。2回実行すればライト・ダーク両方揃う。
 //
 // 実行後、design/screenshots/*.png を DesignSync (write_files + register_assets、
 // PNG は @dsCard マーカーを埋め込めないため register_assets が正規の経路) で
@@ -57,12 +58,24 @@ namespace {
 
 const QString kOutDir = QStringLiteral("/home/tomo/github/Boardes/design/screenshots/");
 
+// ダークテーマ実行時はファイル名に "-dark" を挟み、ライト版と共存させる
+// (例: main-window-drc.png → main-window-drc-dark.png)。
+QString outputFileName(const QString &fileName) {
+	if (!Theme::instance().isDark()) {
+		return fileName;
+	}
+	QString outName = fileName;
+	const int dot = outName.lastIndexOf(QLatin1Char('.'));
+	outName.insert(dot >= 0 ? dot : outName.size(), QStringLiteral("-dark"));
+	return outName;
+}
+
 template <typename Widget>
 void shoot(Widget &w, const QString &fileName) {
 	w.show();
 	QTest::qWaitForWindowExposed(&w);
 	const QPixmap pm = w.grab();
-	pm.save(kOutDir + fileName);
+	pm.save(kOutDir + outputFileName(fileName));
 	w.close();
 }
 
@@ -117,7 +130,7 @@ int main(int argc, char **argv) {
 			tabs->setCurrentIndex(1);
 		}
 		const QPixmap pm = w.grab();
-		pm.save(kOutDir + QStringLiteral("main-window-drc.png"));
+		pm.save(kOutDir + outputFileName(QStringLiteral("main-window-drc.png")));
 		w.close();
 	}
 
@@ -131,7 +144,7 @@ int main(int argc, char **argv) {
 			tabs->setCurrentIndex(2);
 		}
 		const QPixmap pm = w.grab();
-		pm.save(kOutDir + QStringLiteral("main-window-stats.png"));
+		pm.save(kOutDir + outputFileName(QStringLiteral("main-window-stats.png")));
 		w.close();
 	}
 

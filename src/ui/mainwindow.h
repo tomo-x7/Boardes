@@ -93,7 +93,9 @@ private:
 	DrcPanel *m_drcPanel = nullptr;
 	StatsPanel *m_statsPanel = nullptr;
 	ObjectListPanel *m_objectListPanel = nullptr;
-	ZoomBar *m_zoomBar = nullptr;
+	// ステータスバー左 (表面用) / 右 (裏面用) に常設する倍率バー。
+	ZoomBar *m_zoomBarFront = nullptr;
+	ZoomBar *m_zoomBarBack = nullptr;
 	ViewLinkController *m_viewLink = nullptr;
 
 	// ツールバーのカスタマイズ (Phase 19)。commandId → QAction の登録簿と、

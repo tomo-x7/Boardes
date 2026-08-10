@@ -8,7 +8,6 @@
 #include <cmath>
 
 #include "../render/boardview.h"
-#include "helphint.h"
 #include "icons.h"
 #include "theme.h"
 
@@ -49,14 +48,13 @@ ZoomBar::ZoomBar(QWidget *parent) : QWidget(parent) {
 	}
 	m_combo->addItem(QStringLiteral("全体表示"), -1);
 
+	// 「？」バッジは付けない (縮小/拡大/スライダー/パーセンテージという構成は自明なため)。
 	auto *layout = new QHBoxLayout(this);
 	layout->setContentsMargins(0, 0, 0, 0);
 	layout->addWidget(m_minusButton);
 	layout->addWidget(m_slider);
 	layout->addWidget(m_plusButton);
 	layout->addWidget(m_combo);
-	layout->addWidget(helphint::button(
-		tr("表示倍率を変えます。フォーカスのあるビュー (最後にクリックした表面/裏面) が対象です。"), this));
 
 	refreshIcons();
 	connect(&Theme::instance(), &Theme::changed, this, &ZoomBar::refreshIcons);

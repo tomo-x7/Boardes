@@ -455,11 +455,15 @@ void MainWindow::setupViewMenuAndToolbar() {
 	ui->menuView->addAction(pinMarkerColorAction);
 	m_actionRegistry.add(QStringLiteral("toolbar.view.pinMarkerColor"), pinMarkerColorAction);
 
-	m_zoomBar = new ZoomBar(this);
-	ui->statusbar->addPermanentWidget(m_zoomBar);
-	connect(m_frontView, &BoardView::focusReceived, this, [this](BoardView *v) { m_zoomBar->setTargetView(v); });
-	connect(m_backView, &BoardView::focusReceived, this, [this](BoardView *v) { m_zoomBar->setTargetView(v); });
-	m_zoomBar->setTargetView(m_frontView);
+	// 表面/裏面それぞれ専用の倍率バーをステータスバー左右に常設する (以前はフォーカス中の
+	// ビューへ1個を切り替える方式だったが、両方を常に操作できるようにした)。
+	// addWidget() はステータスバーの通常領域 (左寄り)、addPermanentWidget() は右端に置く。
+	m_zoomBarFront = new ZoomBar(this);
+	m_zoomBarFront->setTargetView(m_frontView);
+	ui->statusbar->addWidget(m_zoomBarFront);
+	m_zoomBarBack = new ZoomBar(this);
+	m_zoomBarBack->setTargetView(m_backView);
+	ui->statusbar->addPermanentWidget(m_zoomBarBack);
 
 	// 表示メニューの末尾: ツールバー・ドックの表示/非表示 (LibreOffice 同様、メニューバー
 	// 自体はカスタマイズ対象外) と、カスタマイズ系ダイアログ。
@@ -581,8 +585,11 @@ void MainWindow::refreshToolbarIcons() {
 	setLine("toolbar.tools.wireOutline", icons::DrawOutline);
 	setLine("toolbar.tools.draft", icons::Draft);
 
-	if (m_zoomBar) {
-		m_zoomBar->refreshIcons();
+	if (m_zoomBarFront) {
+		m_zoomBarFront->refreshIcons();
+	}
+	if (m_zoomBarBack) {
+		m_zoomBarBack->refreshIcons();
 	}
 }
 
