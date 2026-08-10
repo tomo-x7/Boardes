@@ -1,0 +1,269 @@
+/* ================================================================
+   Boardes ダークテーマ QSS
+
+   claude.ai/design「Boardes UI」プロジェクトの
+   Boardes UI 刷新仕様書.html §3 (カラートークン) / §7 (コンポーネント別QSS仕様) に基づく。
+   実際の色・構造値は同プロジェクトのモックアップ (screens/redesign-main-window-light.html 等) の
+   CSS カスタムプロパティに合わせている (§7 のプレーンテキスト例より、実データであるモックアップの
+   方を優先した)。
+
+   本ファイルは light.qss と対になるダーク版。セレクタ構成は light.qss と完全に同じで、
+   色の値だけを §3 のダーク側トークンに機械的に置換して作成した。QSS には CSS 変数が無いため、
+   2ファイルを丸ごと用意して qApp->setStyleSheet() で切り替える方式にしている
+   (src/ui/theme.cpp 参照)。
+
+   トークン対応 (この値がどのトークンか):
+     surface-0=#1C1C1C surface-1=#232323 surface-2=#2C2C2C surface-3=#383838
+     border-subtle=#454545 border-strong=#686868
+     text-primary=#F2F2F2 text-secondary=#BEBEBE text-disabled=#8C8C8C
+     wire-front=#2060D0 (固定色) wire-back=#D05020 (固定色)
+     link=#6C9BD1 / link:hover=#8FB4E0
+   ================================================================ */
+
+/* ---- 全体・ダイアログ (surface-1) ---- */
+QMainWindow, QDialog, QWidget#centralwidget {
+	background: #232323;
+}
+
+/* ---- メニュー ---- */
+QMenuBar {
+	background: #2C2C2C;
+	border-bottom: 1px solid #454545;
+	padding: 2px 6px;
+}
+QMenuBar::item { padding: 4px 10px; border-radius: 2px; color: #BEBEBE; background: transparent; }
+QMenuBar::item:selected { background: #383838; color: #F2F2F2; }
+
+QMenu {
+	background: #1C1C1C;
+	border: 1px solid #454545;
+	padding: 4px;
+}
+QMenu::item { padding: 6px 24px 6px 14px; border-radius: 2px; color: #F2F2F2; }
+QMenu::item:selected { background: #383838; color: #F2F2F2; }
+QMenu::item:disabled { color: #8C8C8C; }
+QMenu::separator { height: 1px; background: #454545; margin: 4px 8px; }
+
+/* ---- ツールバー ---- */
+QToolBar { background: #2C2C2C; border: none; padding: 4px 8px; spacing: 2px; }
+QToolBar::separator { background: #454545; width: 1px; margin: 4px 6px; }
+
+QToolButton {
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 2px;
+	padding: 6px;
+	color: #BEBEBE;
+}
+QToolButton:hover { background: #383838; color: #F2F2F2; }
+QToolButton:checked { background: #383838; color: #F2F2F2; border-color: #454545; }
+QToolButton:disabled { color: #8C8C8C; }
+
+/* ツールツールバー (排他6ボタン): 押下状態はグレーのハイライト+下端に細い線を1本引くだけ。
+   C++ 側で QToolButton に setProperty("toolAction", true) を付けたものだけに適用する。 */
+QToolButton[toolAction="true"]:checked {
+	background: #383838;
+	color: #F2F2F2;
+	border-color: #686868;
+	border-bottom: 2px solid #F2F2F2;
+}
+
+/* 配線系のトグル・ツールは配線色をアイコン自体の色として使う (アプリ内で唯一意味のある色分け)。
+   C++ 側で setProperty("wireSide", "front"|"back") を付ける。半透明/不透明の切替はアイコンの
+   ピクスマップ自体を作り分けて行う (src/ui/icons.cpp)。 */
+QToolButton[wireSide="front"] { color: #2060D0; }
+QToolButton[wireSide="back"] { color: #D05020; }
+
+/* ---- ドック・タブ ---- */
+QDockWidget { titlebar-close-icon: none; }
+QDockWidget::title {
+	background: #2C2C2C;
+	padding: 7px 12px;
+	font-weight: 700;
+	color: #BEBEBE;
+	border-bottom: 1px solid #454545;
+}
+
+QTabWidget::pane { border: none; }
+QTabBar { background: #232323; }
+QTabBar::tab {
+	background: transparent;
+	padding: 8px 16px;
+	color: #BEBEBE;
+	border-bottom: 2px solid transparent;
+}
+QTabBar::tab:selected { color: #F2F2F2; border-bottom-color: #F2F2F2; font-weight: 500; }
+QTabBar::tab:hover:!selected { color: #F2F2F2; }
+
+/* ---- 入力系 ---- */
+QComboBox, QLineEdit, QAbstractSpinBox {
+	background: #1C1C1C;
+	border: 1px solid #454545;
+	border-radius: 2px;
+	padding: 5px 8px;
+	color: #F2F2F2;
+	selection-background-color: #383838;
+	selection-color: #F2F2F2;
+}
+QComboBox:hover, QLineEdit:hover, QAbstractSpinBox:hover { border-color: #686868; }
+QComboBox:focus, QLineEdit:focus, QAbstractSpinBox:focus { border-color: #F2F2F2; }
+QComboBox:disabled, QLineEdit:disabled, QAbstractSpinBox:disabled { color: #8C8C8C; background: #2C2C2C; }
+QComboBox::drop-down { border: none; width: 20px; }
+QComboBox QAbstractItemView {
+	background: #1C1C1C;
+	border: 1px solid #454545;
+	selection-background-color: #383838;
+	selection-color: #F2F2F2;
+	outline: none;
+}
+QTextEdit, QPlainTextEdit {
+	background: #1C1C1C;
+	border: 1px solid #454545;
+	border-radius: 2px;
+	color: #F2F2F2;
+}
+QTextEdit:focus, QPlainTextEdit:focus { border-color: #F2F2F2; }
+
+QCheckBox, QRadioButton { color: #F2F2F2; spacing: 6px; background: transparent; }
+QCheckBox:disabled, QRadioButton:disabled { color: #8C8C8C; }
+QCheckBox::indicator, QRadioButton::indicator {
+	width: 14px;
+	height: 14px;
+	border: 1px solid #686868;
+	background: #1C1C1C;
+	border-radius: 2px;
+}
+QRadioButton::indicator { border-radius: 7px; }
+QCheckBox::indicator:hover, QRadioButton::indicator:hover { border-color: #F2F2F2; }
+QCheckBox::indicator:checked, QRadioButton::indicator:checked { background: #F2F2F2; border-color: #F2F2F2; }
+
+/* ---- テーブル・リスト・ツリー ---- */
+/* ヘッダの最後の列より右側の余白部分は ::section では塗られないため、QHeaderView
+   自体にも同じ背景を敷いておく。 */
+QHeaderView { background: #2C2C2C; }
+QHeaderView::section {
+	background: #2C2C2C;
+	color: #BEBEBE;
+	font-weight: 700;
+	font-size: 11.5px;
+	border: none;
+	border-bottom: 1px solid #454545;
+	padding: 6px 10px;
+}
+QTableView, QListView, QTreeView {
+	background: #1C1C1C;
+	border: 1px solid #454545;
+	gridline-color: #2C2C2C;
+	alternate-background-color: #232323;
+	outline: none;
+}
+QTableView::item, QTreeView::item { padding: 3px; }
+QTableView::item:selected, QListView::item:selected, QTreeView::item:selected { background: #383838; color: #F2F2F2; }
+QTableView::item:hover, QTreeView::item:hover { background: #2C2C2C; }
+QTreeView::branch { background: #1C1C1C; }
+
+/* ---- ボタン ---- */
+QPushButton {
+	background: #1C1C1C;
+	border: 1px solid #454545;
+	border-radius: 2px;
+	padding: 6px 14px;
+	color: #F2F2F2;
+}
+QPushButton:hover { background: #383838; }
+QPushButton:pressed { background: #454545; }
+QPushButton:disabled { color: #8C8C8C; background: #2C2C2C; border-color: #454545; }
+QPushButton:default { background: #F2F2F2; color: #1C1C1C; border-color: #F2F2F2; }
+QPushButton:default:hover { background: #D8D8D8; }
+QPushButton:default:pressed { background: #BEBEBE; }
+
+QToolButton#helpBadge {
+	background: transparent;
+	border: 1px solid #454545;
+	border-radius: 2px;
+	color: #8C8C8C;
+	font-size: 9.5px;
+	padding: 0;
+}
+QToolButton#helpBadge:hover { color: #BEBEBE; border-color: #686868; background: transparent; }
+
+/* ---- 分割線・ステータスバー ---- */
+QSplitter::handle { background: #454545; }
+QSplitter::handle:horizontal { width: 1px; }
+QSplitter::handle:vertical { height: 1px; }
+
+QStatusBar { background: #2C2C2C; color: #8C8C8C; border-top: 1px solid #454545; font-size: 11.5px; }
+QStatusBar QLabel { color: #8C8C8C; background: transparent; }
+QStatusBar::item { border: none; }
+
+/* ---- スクロールバー (仕様書に明記は無いが、装飾ゼロ・ニュートラルグレーの原則に合わせフラット化) ---- */
+QScrollBar:vertical { background: #2C2C2C; width: 12px; margin: 0; border: none; }
+QScrollBar::handle:vertical { background: #4A4A4A; min-height: 24px; border-radius: 2px; }
+QScrollBar::handle:vertical:hover { background: #686868; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; border: none; background: none; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+QScrollBar:horizontal { background: #2C2C2C; height: 12px; margin: 0; border: none; }
+QScrollBar::handle:horizontal { background: #4A4A4A; min-width: 24px; border-radius: 2px; }
+QScrollBar::handle:horizontal:hover { background: #686868; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; border: none; background: none; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }
+
+/* ---- スライダー (ステータスバーの倍率バー) ---- */
+QSlider::groove:horizontal { height: 3px; background: #454545; border-radius: 1px; }
+QSlider::sub-page:horizontal { height: 3px; background: #686868; border-radius: 1px; }
+QSlider::add-page:horizontal { height: 3px; background: #454545; border-radius: 1px; }
+QSlider::handle:horizontal {
+	background: #F2F2F2; width: 9px; height: 9px; margin: -4px 0; border-radius: 4px;
+}
+QSlider::handle:horizontal:hover { background: #D8D8D8; }
+
+/* ---- リンク (ブランドカラーではなく「リンクである」ことを示すための最小限の色) ---- */
+QLabel[isLink="true"] { color: #6C9BD1; background: transparent; }
+QLabel[isLink="true"]:hover { color: #8FB4E0; }
+
+/* ---- 表面/裏面ビューヘッダ ---- */
+QLabel#viewHeaderFront {
+	background: #2C2C2C;
+	color: #BEBEBE;
+	font-weight: 700;
+	font-size: 12px;
+	padding: 6px 0;
+	border-bottom: 2px solid #2060D0;
+}
+QLabel#viewHeaderBack {
+	background: #2C2C2C;
+	color: #BEBEBE;
+	font-weight: 700;
+	font-size: 12px;
+	padding: 6px 0;
+	border-bottom: 2px solid #D05020;
+}
+
+/* ---- グループ見出し (ライブラリ管理のボタン群など)。
+   ネイティブ QGroupBox のタイトルはフル幅バーにできないため、ドックタイトルの視覚言語
+   (太字・text-secondary・下線) への近似にとどめる。 */
+QGroupBox {
+	border: none;
+	margin-top: 20px;
+	padding-top: 4px;
+	font-weight: 700;
+	color: #BEBEBE;
+	background: transparent;
+}
+QGroupBox::title {
+	subcontrol-origin: margin;
+	subcontrol-position: top left;
+	left: 0;
+	top: 2px;
+	padding: 0 0 4px 0;
+	color: #BEBEBE;
+	font-weight: 700;
+	border-bottom: 1px solid #454545;
+}
+
+/* ---- 数値専用フィールド: スピンボックス・ID欄・hexコード・ズーム% (§4) ----
+   C++ 側で対象ウィジェットに setProperty("mono", true) を付ける。日本語入力欄には付けない。 */
+QSpinBox[mono="true"], QDoubleSpinBox[mono="true"], QLineEdit[mono="true"],
+QComboBox[mono="true"], QLabel[mono="true"], QPushButton[mono="true"] {
+	font-family: Consolas, "SF Mono", monospace;
+}

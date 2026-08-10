@@ -21,6 +21,8 @@ find_package(Qt6 6.10 REQUIRED COMPONENTS Widgets Svg Test)
 # これをリンクすることで、テストが実アプリと同じコードを検証できるようにする。
 # ------------------------------------------------------------------------
 set(BOARDES_CORE_SOURCES
+	resources/boardes.qrc
+
 	src/core/util.h
 	src/core/units.h
 	src/core/ids.h
@@ -96,6 +98,10 @@ set(BOARDES_CORE_SOURCES
 	src/ui/about.h
 	src/ui/about.cpp
 	src/ui/about.ui
+	src/ui/theme.h
+	src/ui/theme.cpp
+	src/ui/icons.h
+	src/ui/icons.cpp
 	src/ui/helphint.h
 	src/ui/zoombar.h
 	src/ui/zoombar.cpp

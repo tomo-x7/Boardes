@@ -27,6 +27,8 @@
 &lt;a href=&quot;https://www.qt.io/&quot;&gt;https://www.qt.io/&lt;/a&gt;&lt;/p&gt;
 &lt;p&gt;&lt;b&gt;miniz&lt;/b&gt; &amp;mdash; MIT License&lt;br/&gt;
 &lt;a href=&quot;https://github.com/richgel999/miniz&quot;&gt;https://github.com/richgel999/miniz&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;&lt;b&gt;Noto Sans JP&lt;/b&gt; &amp;mdash; SIL Open Font License 1.1&lt;br/&gt;
+&lt;a href=&quot;https://github.com/google/fonts/tree/main/ofl/notosansjp&quot;&gt;https://github.com/google/fonts/tree/main/ofl/notosansjp&lt;/a&gt;&lt;/p&gt;
 &lt;h3&gt;PasS 互換について&lt;/h3&gt;
 &lt;p&gt;PasS (Parts Arrange Support System) は uaubn 氏によるユニバーサル基板エディタです。
 Boardes は PasS のパーツライブラリを読み込んで変換する機能を持ちますが、PasS 自体とは無関係の

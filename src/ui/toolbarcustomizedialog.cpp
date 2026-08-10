@@ -18,6 +18,7 @@
 
 #include "../core/ids.h"
 #include "actionregistry.h"
+#include "theme.h"
 
 namespace {
 constexpr int kSeparatorRole = Qt::UserRole + 1;
@@ -120,6 +121,7 @@ ToolbarCustomizeDialog::ToolbarCustomizeDialog(ActionRegistry *registry, QWidget
 	connect(resetAllButton, &QPushButton::clicked, this, &ToolbarCustomizeDialog::onResetAll);
 
 	rebuildToolbarCombo();
+	Theme::suppressAutoDefault(this);
 }
 
 ToolbarLayout *ToolbarCustomizeDialog::currentLayout() {

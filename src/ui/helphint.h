@@ -15,13 +15,16 @@
 namespace helphint {
 
 // ラベルの右に置く「？」ボタン。ホバーでもクリックでも同じ説明を出す。
+// 見た目は仕様書§6.3 (13×13px・2px角丸・text-disabled色) に QSS 側 (objectName "helpBadge")
+// で合わせる。
 inline QToolButton *button(const QString &text, QWidget *parent = nullptr) {
 	auto *btn = new QToolButton(parent);
+	btn->setObjectName(QStringLiteral("helpBadge"));
 	btn->setText(QStringLiteral("?"));
 	btn->setAutoRaise(true);
 	btn->setToolTip(text);
 	btn->setWhatsThis(text);
-	btn->setFixedSize(18, 18);
+	btn->setFixedSize(13, 13);
 	btn->setFocusPolicy(Qt::NoFocus);
 	QObject::connect(btn, &QToolButton::clicked, btn, [btn, text] {
 		QToolTip::showText(btn->mapToGlobal(btn->rect().bottomLeft()), text, btn);

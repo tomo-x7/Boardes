@@ -4,6 +4,7 @@
 
 class QSlider;
 class QComboBox;
+class QToolButton;
 class BoardView;
 
 // ステータスバー右端に置く倍率バー (Office 等でおなじみの構成)。
@@ -20,6 +21,9 @@ public:
 	// 非所有。nullptr にすると無効表示になる。
 	void setTargetView(BoardView *view);
 
+	// 縮小/拡大ボタンのアイコンをテーマ色で作り直す (Theme::changed から呼ばれる想定)。
+	void refreshIcons();
+
 private slots:
 	void onSliderChanged(int value);
 	void onComboActivated(int index);
@@ -27,6 +31,8 @@ private slots:
 
 private:
 	BoardView *m_view = nullptr;
+	QToolButton *m_minusButton;
+	QToolButton *m_plusButton;
 	QSlider *m_slider;
 	QComboBox *m_combo;
 	bool m_updating = false;

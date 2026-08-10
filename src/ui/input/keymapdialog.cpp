@@ -19,6 +19,7 @@
 #include "commandregistry.h"
 #include "gesturecapturedialog.h"
 #include "keymap.h"
+#include "../theme.h"
 
 namespace {
 
@@ -73,7 +74,10 @@ KeymapDialog::KeymapDialog(Keymap *keymap, QWidget *parent) : QDialog(parent), m
 
 	m_conflictLabel = new QLabel(this);
 	m_conflictLabel->setWordWrap(true);
-	m_conflictLabel->setStyleSheet(QStringLiteral("QLabel { color: #b00; }"));
+	// 仕様書§3.2のerrorトークン (ライト/ダークで値が異なる)。重複割り当ての警告は保存を
+	// ブロックしない旨をここで表す。
+	m_conflictLabel->setStyleSheet(
+		QStringLiteral("QLabel { color: %1; }").arg(Theme::instance().errorColor().name()));
 	mainLayout->addWidget(m_conflictLabel);
 
 	auto *bottomLayout = new QHBoxLayout();
@@ -108,6 +112,7 @@ KeymapDialog::KeymapDialog(Keymap *keymap, QWidget *parent) : QDialog(parent), m
 
 	rebuildCategoryList();
 	updateConflictLabel();
+	Theme::suppressAutoDefault(this);
 }
 
 void KeymapDialog::rebuildCategoryList() {

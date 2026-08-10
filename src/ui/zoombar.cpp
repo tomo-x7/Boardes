@@ -3,12 +3,14 @@
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QLineEdit>
-#include <QPushButton>
 #include <QSlider>
+#include <QToolButton>
 #include <cmath>
 
 #include "../render/boardview.h"
 #include "helphint.h"
+#include "icons.h"
+#include "theme.h"
 
 namespace {
 constexpr int kSliderScale = 100;  // value = round(log2(zoom) * kSliderScale)
@@ -24,10 +26,14 @@ qreal sliderValueToZoom(int value) {
 }  // namespace
 
 ZoomBar::ZoomBar(QWidget *parent) : QWidget(parent) {
-	auto *minusButton = new QPushButton(QStringLiteral("－"), this);
-	minusButton->setFixedWidth(24);
-	auto *plusButton = new QPushButton(QStringLiteral("＋"), this);
-	plusButton->setFixedWidth(24);
+	m_minusButton = new QToolButton(this);
+	m_minusButton->setAutoRaise(true);
+	m_minusButton->setFixedSize(20, 20);
+	m_minusButton->setToolTip(tr("縮小"));
+	m_plusButton = new QToolButton(this);
+	m_plusButton->setAutoRaise(true);
+	m_plusButton->setFixedSize(20, 20);
+	m_plusButton->setToolTip(tr("拡大"));
 
 	m_slider = new QSlider(Qt::Horizontal, this);
 	m_slider->setFixedWidth(100);
@@ -36,6 +42,8 @@ ZoomBar::ZoomBar(QWidget *parent) : QWidget(parent) {
 	m_combo = new QComboBox(this);
 	m_combo->setEditable(true);
 	m_combo->setFixedWidth(90);
+	m_combo->setObjectName(QStringLiteral("zoomBarCombo"));
+	m_combo->setProperty("mono", true);
 	for (int pct : {25, 50, 75, 100, 150, 200, 400, 800, 1600}) {
 		m_combo->addItem(QStringLiteral("%1%").arg(pct), pct);
 	}
@@ -43,17 +51,20 @@ ZoomBar::ZoomBar(QWidget *parent) : QWidget(parent) {
 
 	auto *layout = new QHBoxLayout(this);
 	layout->setContentsMargins(0, 0, 0, 0);
-	layout->addWidget(minusButton);
+	layout->addWidget(m_minusButton);
 	layout->addWidget(m_slider);
-	layout->addWidget(plusButton);
+	layout->addWidget(m_plusButton);
 	layout->addWidget(m_combo);
 	layout->addWidget(helphint::button(
 		tr("表示倍率を変えます。フォーカスのあるビュー (最後にクリックした表面/裏面) が対象です。"), this));
 
-	connect(minusButton, &QPushButton::clicked, this, [this] {
+	refreshIcons();
+	connect(&Theme::instance(), &Theme::changed, this, &ZoomBar::refreshIcons);
+
+	connect(m_minusButton, &QToolButton::clicked, this, [this] {
 		if (m_view) m_view->zoomOut();
 	});
-	connect(plusButton, &QPushButton::clicked, this, [this] {
+	connect(m_plusButton, &QToolButton::clicked, this, [this] {
 		if (m_view) m_view->zoomIn();
 	});
 	connect(m_slider, &QSlider::valueChanged, this, &ZoomBar::onSliderChanged);
@@ -69,6 +80,12 @@ ZoomBar::ZoomBar(QWidget *parent) : QWidget(parent) {
 	});
 
 	setEnabled(false);
+}
+
+void ZoomBar::refreshIcons() {
+	const QColor normal = Theme::instance().iconNormalColor();
+	m_minusButton->setIcon(icons::soloIcon(icons::ZoomBarMinus, normal));
+	m_plusButton->setIcon(icons::soloIcon(icons::ZoomBarPlus, normal));
 }
 
 void ZoomBar::setTargetView(BoardView *view) {

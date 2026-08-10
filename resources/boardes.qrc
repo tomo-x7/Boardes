@@ -1,0 +1,9 @@
+<!-- Phase 20 (claude.ai/design 連携) の UI 刷新で追加したリソース。
+     フォント (Noto Sans JP) とライト/ダーク2枚の QSS を埋め込む。 -->
+<RCC>
+	<qresource prefix="/">
+		<file alias="fonts/NotoSansJP.ttf">fonts/NotoSansJP[wght].ttf</file>
+		<file alias="qss/light.qss">qss/light.qss</file>
+		<file alias="qss/dark.qss">qss/dark.qss</file>
+	</qresource>
+</RCC>

@@ -23,6 +23,7 @@ DuplicateLibraryDialog::DuplicateLibraryDialog(const Library &source, QWidget *p
 	// (テストや将来の拡張で「特定のフィールドだけ」を指し示したいときのため)。
 	m_idEdit = new QLineEdit(this);
 	m_idEdit->setObjectName(QStringLiteral("idEdit"));
+	m_idEdit->setProperty("mono", true);
 	m_idEdit->setText(source.id + QStringLiteral("-copy"));
 	m_nameEdit = new QLineEdit(this);
 	m_nameEdit->setObjectName(QStringLiteral("nameEdit"));
@@ -32,6 +33,7 @@ DuplicateLibraryDialog::DuplicateLibraryDialog(const Library &source, QWidget *p
 	m_authorEdit->setPlaceholderText(tr("あなたの名前"));
 	m_versionEdit = new QLineEdit(this);
 	m_versionEdit->setObjectName(QStringLiteral("versionEdit"));
+	m_versionEdit->setProperty("mono", true);
 	m_versionEdit->setText(QStringLiteral("1.0.0"));
 
 	m_licensePicker = new LicensePickerWidget(this);

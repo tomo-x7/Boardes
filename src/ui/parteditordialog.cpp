@@ -17,12 +17,14 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSpinBox>
+#include <QStyle>
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <limits>
 
 #include "helphint.h"
+#include "theme.h"
 
 // ---------------------------------------------------------------- PartArtworkCanvas
 
@@ -101,11 +103,12 @@ void PartArtworkCanvas::paintEvent(QPaintEvent *) {
 		}
 	}
 
-	// 基準点: 緑の十字 + 小円。ピンのマーカー (赤/青丸) とは別色にして見分けやすくする。
+	// 基準点: 緑の十字 + 小円 (固定色 #3DBE5B、仕様書§9・§12)。ピンのマーカー (赤/青丸) とは
+	// 別色にして見分けやすくする。
 	if (!m_image.isNull()) {
 		const QPoint center(m_anchor.x() * m_scale + m_scale / 2, m_anchor.y() * m_scale + m_scale / 2);
 		const int r = std::max(3, m_scale / 2);
-		painter.setPen(QPen(QColor(40, 200, 80), 2));
+		painter.setPen(QPen(Theme::anchorMarkerColor(), 2));
 		painter.setBrush(Qt::NoBrush);
 		painter.drawEllipse(center, r + 2, r + 2);
 		painter.drawLine(center - QPoint(r + 4, 0), center + QPoint(r + 4, 0));
@@ -135,6 +138,8 @@ PartEditorDialog::PartEditorDialog(QWidget *parent) : QDialog(parent) {
 	connect(openImageButton, &QPushButton::clicked, this, &PartEditorDialog::onOpenImage);
 
 	m_idEdit = new QLineEdit(this);
+	m_idEdit->setObjectName(QStringLiteral("partId"));
+	m_idEdit->setProperty("mono", true);
 	m_idEdit->setPlaceholderText(tr("例: my-part-1"));
 	m_nameEdit = new QLineEdit(this);
 	m_keywordsEdit = new QLineEdit(this);
@@ -155,12 +160,16 @@ PartEditorDialog::PartEditorDialog(QWidget *parent) : QDialog(parent) {
 	m_chromaKeyCheck = new QCheckBox(tr("背景色を透過する"), this);
 	m_chromaColorButton = new QPushButton(this);
 	m_chromaColorButton->setFixedWidth(80);
+	// 色そのものを見せる必要がある機能なのでボタン背景は維持し、フォントだけ等幅にする
+	// (仕様書§12)。
+	m_chromaColorButton->setProperty("mono", true);
 	updateColorButton(m_chromaColorButton, m_chromaKey);
 	m_eyedropperButton = new QPushButton(tr("スポイトで拾う"), this);
 	m_eyedropperButton->setCheckable(true);
 
 	m_drillOnlyModeCheck = new QCheckBox(tr("番号なし (ドリル穴) として配置"), this);
 	m_newPinDrillSpin = new QSpinBox(this);
+	m_newPinDrillSpin->setProperty("mono", true);
 	m_newPinDrillSpin->setRange(0, 99);
 	m_newPinDrillSpin->setSuffix(tr(" (0=既定0.9mm)"));
 
@@ -170,12 +179,14 @@ PartEditorDialog::PartEditorDialog(QWidget *parent) : QDialog(parent) {
 	m_pinTable->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
 	m_pinTable->verticalHeader()->setVisible(false);
 	m_pinTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-	m_pinTable->setSelectionMode(QAbstractItemView::SingleSelection);
+	// 複数ピンをまとめて選択して削除できるようにする (仕様書§12)。
+	m_pinTable->setSelectionMode(QAbstractItemView::ExtendedSelection);
 
 	m_deletePinButton = new QPushButton(tr("選択したピンを削除"), this);
 	connect(m_deletePinButton, &QPushButton::clicked, this, &PartEditorDialog::onDeleteSelectedPin);
 
 	m_anchorLabel = new QLabel(this);
+	m_anchorLabel->setProperty("mono", true);
 	m_anchorPickButton = new QPushButton(tr("キャンバスで指定"), this);
 	m_anchorPickButton->setCheckable(true);
 	connect(m_anchorPickButton, &QPushButton::toggled, this, &PartEditorDialog::onToggleAnchorPick);
@@ -254,6 +265,7 @@ PartEditorDialog::PartEditorDialog(QWidget *parent) : QDialog(parent) {
 
 	setMode(Mode::Create);
 	updateAnchorLabel();
+	Theme::suppressAutoDefault(this);
 }
 
 void PartEditorDialog::setMode(Mode mode) {
@@ -295,6 +307,10 @@ void PartEditorDialog::onOpenImage() {
 	}
 	m_sourceImage = img.convertToFormat(QImage::Format_ARGB32);
 	m_hintLabel->setText(tr("%1 x %2 px").arg(m_sourceImage.width()).arg(m_sourceImage.height()));
+	// 画像サイズ表示になった後は数値のみなので等幅フォントにする (未読込時の案内文は対象外)。
+	m_hintLabel->setProperty("mono", true);
+	m_hintLabel->style()->unpolish(m_hintLabel);
+	m_hintLabel->style()->polish(m_hintLabel);
 	// クロマキー色の初期値を、読み込んだ画像自身の左上画素から推定する。この種の部品画像は
 	// 背景色を隅に置く慣習が強く、決め打ちの定数より実用的。ユーザーはこの後スポイトや
 	// 色選択ダイアログで自由に変更できる。
@@ -416,13 +432,19 @@ void PartEditorDialog::rebuildPinTable() {
 	m_pinTable->setRowCount(m_pins.size());
 	for (int row = 0; row < m_pins.size(); ++row) {
 		const Pin &p = m_pins[row];
+		// 番号/X/Y/ドリルはすべて数値なので等幅フォントで表示する (仕様書§4・§12)。
+		const QFont mono = Theme::monoFont();
 		auto *numberItem = new QTableWidgetItem(p.hasNumber() ? QString::number(p.number) : tr("(なし)"));
 		numberItem->setFlags(numberItem->flags() & ~Qt::ItemIsEditable);
+		numberItem->setFont(mono);
 		auto *xItem = new QTableWidgetItem(QString::number(p.pos.x()));
 		xItem->setFlags(xItem->flags() & ~Qt::ItemIsEditable);
+		xItem->setFont(mono);
 		auto *yItem = new QTableWidgetItem(QString::number(p.pos.y()));
 		yItem->setFlags(yItem->flags() & ~Qt::ItemIsEditable);
+		yItem->setFont(mono);
 		auto *drillItem = new QTableWidgetItem(QString::number(p.drill));  // これだけ編集可 (既定フラグのまま)
+		drillItem->setFont(mono);
 
 		m_pinTable->setItem(row, 0, numberItem);
 		m_pinTable->setItem(row, 1, xItem);
@@ -457,11 +479,19 @@ void PartEditorDialog::onDeleteSelectedPin() {
 	if (selected.isEmpty()) {
 		return;
 	}
-	const int row = selected.first().row();
-	if (row < 0 || row >= m_pins.size()) {
-		return;
+	// 複数選択に対応 (仕様書§12)。行番号の大きい方から消さないと、消すたびに残りの
+	// インデックスがずれる。
+	QVector<int> rows;
+	rows.reserve(selected.size());
+	for (const QModelIndex &idx : selected) {
+		if (idx.row() >= 0 && idx.row() < m_pins.size()) {
+			rows.append(idx.row());
+		}
 	}
-	m_pins.removeAt(row);
+	std::sort(rows.begin(), rows.end());
+	for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+		m_pins.removeAt(*it);
+	}
 	renumberSequentially();
 	rebuildPinTable();
 	m_canvas->setPins(m_pins);

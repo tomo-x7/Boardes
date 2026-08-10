@@ -111,6 +111,9 @@ private:
 	// は表示/非表示とボタンスタイルのみ変更し、それ以外 (ユーザー作成分) は
 	// 毎回組み立て直す。ToolbarCustomizeDialog::layoutsChanged からも呼ばれる。
 	void rebuildToolbars();
+	// 表示/ツールツールバーの各アクションに線画アイコンを (再) 設定する。Theme::changed
+	// (OS側のライト/ダーク切替) に接続してあり、実行中のテーマ変更にも追従する。
+	void refreshToolbarIcons();
 	void setDocument(std::unique_ptr<Document> doc, const QString &filePath = QString());
 	void syncAllScenes();
 	// 基板を Undo コマンド経由で設定し、直後に両ビューを全体表示にする

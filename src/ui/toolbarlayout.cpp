@@ -51,8 +51,10 @@ bool fromJson(const QJsonValue &v, ToolbarLayout &out) {
 }  // namespace
 
 const QVector<ToolbarLayout> &defaults() {
+	// 既定はアイコンのみ表示 (仕様書§6)。ホバーでツールチップにラベルが出る。ユーザーは
+	// ToolbarCustomizeDialog でテキスト表示に戻せる。
 	static const QVector<ToolbarLayout> layouts = {
-		{QStringLiteral("view"), QObject::tr("表示"), true, true, Qt::ToolButtonTextBesideIcon,
+		{QStringLiteral("view"), QObject::tr("表示"), true, true, Qt::ToolButtonIconOnly,
 		 {QStringLiteral("toolbar.view.zoomIn"), QStringLiteral("toolbar.view.zoomOut"),
 		  QStringLiteral("toolbar.view.zoomReset"), QStringLiteral("toolbar.view.fit"), QStringLiteral("-"),
 		  QStringLiteral("toolbar.view.orientation"), QStringLiteral("toolbar.view.linkViews"), QStringLiteral("-"),
@@ -61,7 +63,7 @@ const QVector<ToolbarLayout> &defaults() {
 		  QStringLiteral("toolbar.view.outline"), QStringLiteral("toolbar.view.partOutline"),
 		  QStringLiteral("toolbar.view.pinNumbers"), QStringLiteral("toolbar.view.labels"),
 		  QStringLiteral("toolbar.view.pinMarkers"), QStringLiteral("toolbar.view.pinMarkerColor")}},
-		{QStringLiteral("tools"), QObject::tr("ツール"), true, true, Qt::ToolButtonTextBesideIcon,
+		{QStringLiteral("tools"), QObject::tr("ツール"), true, true, Qt::ToolButtonIconOnly,
 		 {QStringLiteral("toolbar.tools.select"), QStringLiteral("-"), QStringLiteral("toolbar.tools.wireBare"),
 		  QStringLiteral("toolbar.tools.wireInsulated"), QStringLiteral("toolbar.tools.wireOutline"),
 		  QStringLiteral("-"), QStringLiteral("toolbar.tools.draft"), QStringLiteral("-"),

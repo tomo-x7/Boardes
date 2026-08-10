@@ -44,6 +44,7 @@
 #include "exportimageoptionsdialog.h"
 #include "exportpackagedialog.h"
 #include "helphint.h"
+#include "icons.h"
 #include "input/keymapdialog.h"
 #include "librarymanagerdialog.h"
 #include "toolbarcustomizedialog.h"
@@ -52,6 +53,7 @@
 #include "parteditordialog.h"
 #include "partselector.h"
 #include "statspanel.h"
+#include "theme.h"
 #include "ui_mainwindow.h"
 #include "viewlink.h"
 #include "zoombar.h"
@@ -160,22 +162,23 @@ MainWindow::~MainWindow() {
 void MainWindow::setupCentralWidget() {
 	m_partSelector = new PartSelector(this);
 
-	auto makeViewBox = [this](const QString &title, BoardView *&view) -> QWidget * {
+	auto makeViewBox = [this](const QString &title, const QString &headerObjectName, BoardView *&view) -> QWidget * {
 		auto *box = new QWidget();
 		auto *layout = new QVBoxLayout(box);
 		layout->setContentsMargins(0, 0, 0, 0);
 		layout->setSpacing(0);
 		auto *label = new QLabel(title, box);
 		label->setAlignment(Qt::AlignCenter);
-		label->setStyleSheet(QStringLiteral("QLabel { background: palette(mid); font-weight: bold; padding: 2px; }"));
+		// 表面/裏面で異なる下線色 (配線の表裏色分けと同じ) を付ける。QSS §7.7 のセレクタ。
+		label->setObjectName(headerObjectName);
 		view = new BoardView(box);
 		layout->addWidget(label);
 		layout->addWidget(view, 1);
 		return box;
 	};
 
-	QWidget *frontBox = makeViewBox(QStringLiteral("表面"), m_frontView);
-	QWidget *backBox = makeViewBox(QStringLiteral("裏面"), m_backView);
+	QWidget *frontBox = makeViewBox(QStringLiteral("表面"), QStringLiteral("viewHeaderFront"), m_frontView);
+	QWidget *backBox = makeViewBox(QStringLiteral("裏面"), QStringLiteral("viewHeaderBack"), m_backView);
 
 	m_viewsSplitter = new QSplitter(Qt::Horizontal);
 	m_viewsSplitter->addWidget(frontBox);
@@ -204,6 +207,10 @@ void MainWindow::setupCentralWidget() {
 void MainWindow::setupSidePanelDock() {
 	auto *dock = new QDockWidget(QStringLiteral("パネル"), this);
 	dock->setObjectName(QStringLiteral("sidePanelDock"));
+	// タイトルバーは廃止し、タブ列がドック最上部に来るようにする (仕様書§6.3。タイトルは
+	// タブ名で十分で冗長なため)。空ウィジェットを渡すと高さ0になり事実上非表示にできる。
+	// ドラッグでのフロート化はできなくなるが、右ドック1枚だけの構成では実害が無い。
+	dock->setTitleBarWidget(new QWidget(dock));
 
 	auto *tabs = new QTabWidget(dock);
 	m_objectListPanel = new ObjectListPanel(tabs);
@@ -230,6 +237,8 @@ void MainWindow::setupViewMenuAndToolbar() {
 	toolbar->setObjectName(QStringLiteral("viewToolBar"));
 	m_toolbars.insert(QStringLiteral("view"), toolbar);
 
+	// 「100%」はズーム倍率そのものが状態表示を兼ねるため、アイコン化せずテキストのまま
+	// 維持する (仕様書§6.1)。それ以外のボタンは線画アイコンのみ表示にする。
 	QAction *zoomInAction = toolbar->addAction(QStringLiteral("拡大"));
 	connect(zoomInAction, &QAction::triggered, this, [this] {
 		m_frontView->zoomIn();
@@ -314,8 +323,11 @@ void MainWindow::setupViewMenuAndToolbar() {
 
 	toolbar->addSeparator();
 
+	// wireSide が空でなければ、実体の QToolButton に setProperty("wireSide", ...) を付ける
+	// (QSS §7.2 のセレクタ用。配線色をアイコン自体の色として使う、アプリ内で唯一意味のある
+	// 色分け)。
 	auto addToggle = [&](const QString &text, bool checked, const std::function<void(bool)> &onToggled,
-						 const QString &tooltip = QString()) -> QAction * {
+						 const QString &tooltip = QString(), const QString &wireSide = QString()) -> QAction * {
 		QAction *a = toolbar->addAction(text);
 		a->setCheckable(true);
 		a->setChecked(checked);
@@ -324,6 +336,11 @@ void MainWindow::setupViewMenuAndToolbar() {
 		}
 		connect(a, &QAction::toggled, this, onToggled);
 		ui->menuView->addAction(a);
+		if (!wireSide.isEmpty()) {
+			if (QWidget *w = toolbar->widgetForAction(a)) {
+				w->setProperty("wireSide", wireSide);
+			}
+		}
 		return a;
 	};
 
@@ -335,7 +352,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 				m_frontScene->setLayerVisible(WireLayer::FrontBare, v);
 				m_backScene->setLayerVisible(WireLayer::FrontBare, v);
 			},
-			QStringLiteral("表面の裸線 (被覆なし配線) の表示/非表示を切り替えます。")));
+			QStringLiteral("表面の裸線 (被覆なし配線) の表示/非表示を切り替えます。"), QStringLiteral("front")));
 	m_actionRegistry.add(
 		QStringLiteral("toolbar.view.wireBackBare"),
 		addToggle(
@@ -344,7 +361,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 				m_frontScene->setLayerVisible(WireLayer::BackBare, v);
 				m_backScene->setLayerVisible(WireLayer::BackBare, v);
 			},
-			QStringLiteral("裏面の裸線 (被覆なし配線) の表示/非表示を切り替えます。")));
+			QStringLiteral("裏面の裸線 (被覆なし配線) の表示/非表示を切り替えます。"), QStringLiteral("back")));
 	m_actionRegistry.add(
 		QStringLiteral("toolbar.view.wireFrontInsulated"),
 		addToggle(
@@ -353,7 +370,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 				m_frontScene->setLayerVisible(WireLayer::FrontInsulated, v);
 				m_backScene->setLayerVisible(WireLayer::FrontInsulated, v);
 			},
-			QStringLiteral("表面の被覆配線の表示/非表示を切り替えます。")));
+			QStringLiteral("表面の被覆配線の表示/非表示を切り替えます。"), QStringLiteral("front")));
 	m_actionRegistry.add(
 		QStringLiteral("toolbar.view.wireBackInsulated"),
 		addToggle(
@@ -362,7 +379,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 				m_frontScene->setLayerVisible(WireLayer::BackInsulated, v);
 				m_backScene->setLayerVisible(WireLayer::BackInsulated, v);
 			},
-			QStringLiteral("裏面の被覆配線の表示/非表示を切り替えます。")));
+			QStringLiteral("裏面の被覆配線の表示/非表示を切り替えます。"), QStringLiteral("back")));
 	m_actionRegistry.add(
 		QStringLiteral("toolbar.view.outline"),
 		addToggle(
@@ -420,8 +437,9 @@ void MainWindow::setupViewMenuAndToolbar() {
 			},
 			QStringLiteral("PasS 部品の赤マーカー等、ピンの位置に丸を重ねて表示します。独自部品でも表示できます。")));
 	QAction *pinMarkerColorAction = toolbar->addAction(QStringLiteral("接点マーカーの色..."));
+	pinMarkerColorAction->setIcon(icons::colorSwatch(pinMarkerColor));
 	pinMarkerColorAction->setToolTip(QStringLiteral("接点マーカーの色を選びます。"));
-	connect(pinMarkerColorAction, &QAction::triggered, this, [this] {
+	connect(pinMarkerColorAction, &QAction::triggered, this, [this, pinMarkerColorAction] {
 		const QColor cur =
 			QSettings().value(QStringLiteral("view/pinMarkerColor"), QColor(255, 0, 0)).value<QColor>();
 		const QColor c = QColorDialog::getColor(cur.isValid() ? cur : QColor(255, 0, 0), this, tr("接点マーカーの色を選択"));
@@ -429,6 +447,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 			return;
 		}
 		QSettings().setValue(QStringLiteral("view/pinMarkerColor"), c);
+		pinMarkerColorAction->setIcon(icons::colorSwatch(c));
 		const bool visible = QSettings().value(QStringLiteral("view/pinMarkerVisible"), true).toBool();
 		m_frontScene->setPinMarkers(visible, c, 3.0);
 		m_backScene->setPinMarkers(visible, c, 3.0);
@@ -472,11 +491,16 @@ void MainWindow::setupToolsToolbar() {
 	m_toolActionGroup = new QActionGroup(this);
 	m_toolActionGroup->setExclusive(true);
 
+	// toolAction プロパティは QSS §7.2 のセレクタ用 (排他6ボタンのチェック時、下端に
+	// 太い下線を1本引くだけの見た目にする)。
 	auto addToolAction = [&](const QString &text, const std::function<void()> &activate) -> QAction * {
 		QAction *a = toolbar->addAction(text);
 		a->setCheckable(true);
 		m_toolActionGroup->addAction(a);
 		connect(a, &QAction::triggered, this, [activate] { activate(); });
+		if (QWidget *w = toolbar->widgetForAction(a)) {
+			w->setProperty("toolAction", true);
+		}
 		return a;
 	};
 
@@ -511,6 +535,55 @@ void MainWindow::setupToolsToolbar() {
 	toolbar->addWidget(snapCombo);
 
 	ui->menuView->addAction(toolbar->toggleViewAction());
+
+	refreshToolbarIcons();
+	connect(&Theme::instance(), &Theme::changed, this, &MainWindow::refreshToolbarIcons);
+}
+
+// 表示/ツールツールバーの各アクションに線画アイコンを設定する。現在のテーマの
+// text-secondary/text-primary を焼き込むため、OS側のテーマ切替 (Theme::changed) でも
+// 呼び直す。
+void MainWindow::refreshToolbarIcons() {
+	const QColor normal = Theme::instance().iconNormalColor();
+	const QColor active = Theme::instance().iconActiveColor();
+	auto setLine = [&](const char *id, const icons::IconSpec &spec) {
+		if (QAction *a = m_actionRegistry.action(QString::fromUtf8(id))) {
+			a->setIcon(icons::lineIcon(spec, normal, active));
+		}
+	};
+	auto setWire = [&](const char *id, const icons::IconSpec &spec, const QColor &color) {
+		if (QAction *a = m_actionRegistry.action(QString::fromUtf8(id))) {
+			a->setIcon(icons::wireLineIcon(spec, color));
+		}
+	};
+
+	// 表示ツールバー (1段目)。「100%」バッジはテキストのまま (アイコン化しない)。
+	setLine("toolbar.view.zoomIn", icons::ZoomIn);
+	setLine("toolbar.view.zoomOut", icons::ZoomOut);
+	setLine("toolbar.view.fit", icons::Fit);
+	setLine("toolbar.view.orientation", icons::Orientation);
+	setLine("toolbar.view.linkViews", icons::LinkViews);
+	setWire("toolbar.view.wireFrontBare", icons::WireDot, Theme::wireFrontColor());
+	setWire("toolbar.view.wireBackBare", icons::WireDot, Theme::wireBackColor());
+	setWire("toolbar.view.wireFrontInsulated", icons::WireDotThick, Theme::wireFrontInsulatedColor());
+	setWire("toolbar.view.wireBackInsulated", icons::WireDotThick, Theme::wireBackInsulatedColor());
+	setLine("toolbar.view.outline", icons::Outline);
+	setLine("toolbar.view.partOutline", icons::PartOutline);
+	setLine("toolbar.view.pinNumbers", icons::PinNumbers);
+	setLine("toolbar.view.labels", icons::Labels);
+	setLine("toolbar.view.pinMarkers", icons::PinMarkers);
+
+	// ツールツールバー (2段目)。どちらの面に描くか未確定なツールなので、配線系も
+	// wireSide 色は使わず通常色/強調色にする (仕様書§6.2、モックアップにも色指定なし)。
+	setLine("toolbar.tools.select", icons::Select);
+	setLine("toolbar.tools.wireBare", icons::WireDot);
+	setLine("toolbar.tools.wireInsulated", icons::WireDotThick);
+	setLine("toolbar.tools.wireOutline", icons::DrawOutline);
+	setLine("toolbar.tools.draft", icons::Draft);
+
+	if (m_zoomBar) {
+		m_zoomBar->refreshIcons();
+	}
 }
 
 void MainWindow::rebuildToolbars() {

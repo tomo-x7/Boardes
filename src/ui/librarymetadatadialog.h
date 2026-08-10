@@ -7,6 +7,7 @@
 class QLineEdit;
 class QTextEdit;
 class QDialogButtonBox;
+class QFormLayout;
 class LicensePickerWidget;
 
 // ライブラリのメタデータを編集するダイアログ。Phase 14 で全ライブラリが編集可能に
@@ -37,6 +38,7 @@ private slots:
 
 private:
 	Mode m_mode = Mode::Create;
+	QFormLayout *m_form = nullptr;
 	QLineEdit *m_idEdit;
 	QLineEdit *m_nameEdit;
 	QLineEdit *m_versionEdit;

@@ -20,9 +20,11 @@
 
 #include "../core/units.h"
 #include "helphint.h"
+#include "theme.h"
 
 namespace {
-constexpr int kThumbW = 96;
+// 仕様書§11: サムネイルは120×60px。
+constexpr int kThumbW = 120;
 constexpr int kThumbH = 60;
 }  // namespace
 
@@ -35,26 +37,35 @@ BoardEditorDialog::BoardEditorDialog(QWidget *parent) : QDialog(parent) {
 	m_modeGroup->addButton(m_paramModeRadio);
 	connect(m_modeGroup, &QButtonGroup::buttonToggled, this, &BoardEditorDialog::onCreationModeToggled);
 
+	// ID・各種数値スピンボックスは等幅フォントで表示する (仕様書§4・§11。桁が縦に揃い、
+	// 値が変わっても幅がガタつかないようにするため)。名前欄など日本語入力には適用しない。
 	m_idEdit = new QLineEdit(this);
+	m_idEdit->setObjectName(QStringLiteral("boardId"));
+	m_idEdit->setProperty("mono", true);
 	m_idEdit->setPlaceholderText(tr("例: my-board-1"));
 	m_nameEdit = new QLineEdit(this);
 	m_nameEdit->setPlaceholderText(tr("例: 自作基板 70x50"));
 
 	m_colsSpin = new QSpinBox(this);
+	m_colsSpin->setProperty("mono", true);
 	m_colsSpin->setRange(1, 500);
 	m_colsSpin->setValue(10);
 	m_rowsSpin = new QSpinBox(this);
+	m_rowsSpin->setProperty("mono", true);
 	m_rowsSpin->setRange(1, 500);
 	m_rowsSpin->setValue(10);
 	m_pitchSpin = new QSpinBox(this);
+	m_pitchSpin->setProperty("mono", true);
 	m_pitchSpin->setRange(1, 100);
 	m_pitchSpin->setValue(units::Pitch);
 	m_pitchSpin->setSuffix(tr(" 単位 (0.254mm)"));
 
 	m_originXSpin = new QSpinBox(this);
+	m_originXSpin->setProperty("mono", true);
 	m_originXSpin->setRange(0, 1000);
 	m_originXSpin->setValue(units::Pitch / 2);
 	m_originYSpin = new QSpinBox(this);
+	m_originYSpin->setProperty("mono", true);
 	m_originYSpin->setRange(0, 1000);
 	m_originYSpin->setValue(units::Pitch / 2);
 
@@ -65,9 +76,11 @@ BoardEditorDialog::BoardEditorDialog(QWidget *parent) : QDialog(parent) {
 	m_padShapeCombo->setCurrentIndex(1);  // Round
 
 	m_padDiameterSpin = new QSpinBox(this);
+	m_padDiameterSpin->setProperty("mono", true);
 	m_padDiameterSpin->setRange(0, 100);
 	m_padDiameterSpin->setValue(6);
 	m_holeDiameterSpin = new QSpinBox(this);
+	m_holeDiameterSpin->setProperty("mono", true);
 	m_holeDiameterSpin->setRange(0, 100);
 	m_holeDiameterSpin->setValue(3);
 
@@ -80,15 +93,21 @@ BoardEditorDialog::BoardEditorDialog(QWidget *parent) : QDialog(parent) {
 
 	m_doubleSidedCheck = new QCheckBox(tr("両面基板"), this);
 
-	m_substrateColorButton = new QPushButton(this);
-	m_padColorButton = new QPushButton(this);
-	m_copperColorButton = new QPushButton(this);
-	for (QPushButton *b : {m_substrateColorButton, m_padColorButton, m_copperColorButton}) {
-		b->setFixedWidth(80);
-	}
-	updateColorButton(m_substrateColorButton, m_substrateColor);
-	updateColorButton(m_padColorButton, m_padColor);
-	updateColorButton(m_copperColorButton, m_copperColor);
+	// 正方形スウォッチ (色そのものを見せる) + 隣に等幅フォントの hex 表示、という組み合わせに
+	// する (仕様書§11)。文字を色の上に重ねると読めなくなる色があるための変更。
+	auto makeSwatch = [this](QPushButton *&swatch, QLabel *&hexLabel) {
+		swatch = new QPushButton(this);
+		swatch->setFixedSize(20, 20);
+		swatch->setFlat(true);
+		hexLabel = new QLabel(this);
+		hexLabel->setProperty("mono", true);
+	};
+	makeSwatch(m_substrateColorButton, m_substrateColorHexLabel);
+	makeSwatch(m_padColorButton, m_padColorHexLabel);
+	makeSwatch(m_copperColorButton, m_copperColorHexLabel);
+	updateColorButton(m_substrateColorButton, m_substrateColorHexLabel, m_substrateColor);
+	updateColorButton(m_padColorButton, m_padColorHexLabel, m_padColor);
+	updateColorButton(m_copperColorButton, m_copperColorHexLabel, m_copperColor);
 
 	m_derivedLabel = new QLabel(this);
 	m_derivedLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
@@ -140,10 +159,15 @@ BoardEditorDialog::BoardEditorDialog(QWidget *parent) : QDialog(parent) {
 	m_form->addRow(QString(), m_doubleSidedCheck);
 	m_colorRow = new QHBoxLayout();
 	m_colorRow->addWidget(m_substrateColorButton);
+	m_colorRow->addWidget(m_substrateColorHexLabel);
+	m_colorRow->addSpacing(12);
 	m_colorRow->addWidget(new QLabel(tr("パッド:"), this));
 	m_colorRow->addWidget(m_padColorButton);
+	m_colorRow->addWidget(m_padColorHexLabel);
+	m_colorRow->addSpacing(12);
 	m_colorRow->addWidget(new QLabel(tr("銅箔:"), this));
 	m_colorRow->addWidget(m_copperColorButton);
+	m_colorRow->addWidget(m_copperColorHexLabel);
 	m_colorRow->addStretch(1);
 	m_form->addRow(tr("基板色:"), m_colorRow);
 
@@ -194,6 +218,7 @@ BoardEditorDialog::BoardEditorDialog(QWidget *parent) : QDialog(parent) {
 	setMode(Mode::Create);
 	onCreationModeToggled();
 	updateDerivedLabel();
+	Theme::suppressAutoDefault(this);
 }
 
 void BoardEditorDialog::onCreationModeToggled() {
@@ -221,18 +246,18 @@ void BoardEditorDialog::setMode(Mode mode) {
 	}
 }
 
-void BoardEditorDialog::updateColorButton(QPushButton *button, const QColor &color) {
-	button->setText(color.name());
-	button->setStyleSheet(
-		QStringLiteral("background-color: %1; color: %2;")
-			.arg(color.name(), color.lightness() > 128 ? QStringLiteral("black") : QStringLiteral("white")));
+void BoardEditorDialog::updateColorButton(QPushButton *swatch, QLabel *hexLabel, const QColor &color) {
+	// スウォッチには色だけを塗り、文字は乗せない (どんな色でも文字が読めなくなる事故を
+	// 避けるため。仕様書§11)。hex はスウォッチの隣の等幅ラベルに表示する。
+	swatch->setStyleSheet(QStringLiteral("background-color: %1; border: 1px solid palette(mid);").arg(color.name()));
+	hexLabel->setText(color.name());
 }
 
 void BoardEditorDialog::pickSubstrateColor() {
 	const QColor c = QColorDialog::getColor(m_substrateColor, this, tr("基板色を選択"));
 	if (c.isValid()) {
 		m_substrateColor = c;
-		updateColorButton(m_substrateColorButton, c);
+		updateColorButton(m_substrateColorButton, m_substrateColorHexLabel, c);
 	}
 }
 
@@ -240,7 +265,7 @@ void BoardEditorDialog::pickPadColor() {
 	const QColor c = QColorDialog::getColor(m_padColor, this, tr("パッド色を選択"));
 	if (c.isValid()) {
 		m_padColor = c;
-		updateColorButton(m_padColorButton, c);
+		updateColorButton(m_padColorButton, m_padColorHexLabel, c);
 	}
 }
 
@@ -248,7 +273,7 @@ void BoardEditorDialog::pickCopperColor() {
 	const QColor c = QColorDialog::getColor(m_copperColor, this, tr("銅箔色を選択"));
 	if (c.isValid()) {
 		m_copperColor = c;
-		updateColorButton(m_copperColorButton, c);
+		updateColorButton(m_copperColorButton, m_copperColorHexLabel, c);
 	}
 }
 
@@ -380,9 +405,9 @@ void BoardEditorDialog::setBoard(const BoardSpec &board) {
 	m_substrateColor = board.substrateColor;
 	m_padColor = board.padColor;
 	m_copperColor = board.copperColor;
-	updateColorButton(m_substrateColorButton, m_substrateColor);
-	updateColorButton(m_padColorButton, m_padColor);
-	updateColorButton(m_copperColorButton, m_copperColor);
+	updateColorButton(m_substrateColorButton, m_substrateColorHexLabel, m_substrateColor);
+	updateColorButton(m_padColorButton, m_padColorHexLabel, m_padColor);
+	updateColorButton(m_copperColorButton, m_copperColorHexLabel, m_copperColor);
 	m_backgroundFront = board.backgroundFront;
 	m_backgroundBack = board.backgroundBack;
 	updateThumbnail(m_frontBgThumb, m_backgroundFront);

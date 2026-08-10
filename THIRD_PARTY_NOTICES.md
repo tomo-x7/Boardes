@@ -17,3 +17,10 @@
 - **コンポーネント**: miniz（zip 読み書き用、`src/vendor/miniz.h` / `src/vendor/miniz.c` にベンダリング）
 - **リポジトリ**: https://github.com/richgel999/miniz
 - **ライセンス**: MIT License (`src/vendor/miniz_LICENSE.txt` に全文を同梱)
+
+## Noto Sans JP
+
+- **コンポーネント**: Noto Sans JP フォント（UI の既定フォントとしてアプリに埋め込み、
+  `resources/fonts/NotoSansJP[wght].ttf` にベンダリング）
+- **リポジトリ**: https://github.com/google/fonts/tree/main/ofl/notosansjp
+- **ライセンス**: SIL Open Font License, Version 1.1 (`resources/fonts/NotoSansJP_OFL.txt` に全文を同梱)

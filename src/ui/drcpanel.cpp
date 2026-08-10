@@ -8,14 +8,18 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include "theme.h"
+
 namespace {
 
 QString severityText(DrcSeverity s) {
 	return s == DrcSeverity::Error ? QStringLiteral("エラー") : QStringLiteral("警告");
 }
 
+// 仕様書§3.2のセマンティックトークン (error/warning)。ライト/ダークで値が異なるため
+// Theme 経由で取得する。
 QColor severityColor(DrcSeverity s) {
-	return s == DrcSeverity::Error ? QColor(200, 40, 40) : QColor(180, 120, 0);
+	return s == DrcSeverity::Error ? Theme::instance().errorColor() : Theme::instance().warningColor();
 }
 
 }  // namespace
@@ -39,6 +43,8 @@ DrcPanel::DrcPanel(QWidget *parent) : QWidget(parent) {
 	layout->addWidget(m_tree, /*stretch=*/1);
 
 	connect(m_tree, &QTreeWidget::itemClicked, this, &DrcPanel::onItemClicked);
+	// OS側のライト/ダーク切替で重要度の文字色を塗り直す。
+	connect(&Theme::instance(), &Theme::changed, this, &DrcPanel::refresh);
 }
 
 void DrcPanel::setContext(Document *document, LibraryManager *libraryManager) {

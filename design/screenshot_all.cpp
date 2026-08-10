@@ -2,8 +2,10 @@
 // boardes_core (ライブラリ本体) に対して単発でリンクする、テストスイートの一部ではない
 // 開発ツール。実アプリの各画面を実際に構築・表示・グラブして design/screenshots/*.png に
 // 書き出す。CMake のビルドツリーには含めない (テストではないため)。
-// Phase 20 で、Phase 10〜19 の UI 変更 (ライブラリ管理の全面刷新、操作/ツールバーの
-// カスタマイズ画面の新規追加等) に合わせて更新した。
+// Phase 19以前の完了時点で、Phase 10〜19 の UI 変更 (ライブラリ管理の全面刷新、操作/
+// ツールバーのカスタマイズ画面の新規追加等) に合わせて更新した。
+// Phase 20 (claude.ai/design のデザイン刷新の実装) で Theme::instance().init() の呼び出しを
+// 追加し、刷新後の配色・フォントで撮れるようにした。
 //
 // ビルド (プロジェクトルートで、事前に `cmake --build build` 済みであること):
 //   g++ -DQT_CORE_LIB -DQT_GUI_LIB -DQT_SVG_LIB -DQT_WIDGETS_LIB -DQT_TESTLIB_LIB \
@@ -17,6 +19,8 @@
 //
 // 実行 (実データを使うので QT_QPA_PLATFORM=offscreen 必須、XDG_DATA_HOME は隔離推奨):
 //   XDG_DATA_HOME=$(mktemp -d) QT_QPA_PLATFORM=offscreen /tmp/screenshot_all
+// ダークテーマで撮る場合は環境変数 BOARDES_SCREENSHOT_THEME_DARK=1 を追加する
+// (design/screenshots/ にはこれまでどおりライトテーマ版だけを置く)。
 //
 // 実行後、design/screenshots/*.png を DesignSync (write_files + register_assets、
 // PNG は @dsCard マーカーを埋め込めないため register_assets が正規の経路) で
@@ -46,6 +50,7 @@
 #include "ui/mainwindow.h"
 #include "ui/parteditordialog.h"
 #include "ui/partpickerdialog.h"
+#include "ui/theme.h"
 #include "ui/toolbarcustomizedialog.h"
 
 namespace {
@@ -65,6 +70,14 @@ void shoot(Widget &w, const QString &fileName) {
 
 int main(int argc, char **argv) {
 	QApplication app(argc, argv);
+
+	// Phase 20 (claude.ai/design 連携の UI 刷新) のフォント・QSS を適用する。
+	// BOARDES_SCREENSHOT_THEME=dark を指定するとダーク版を撮れる (既定はライト)。
+	Theme::instance().init();
+	if (qEnvironmentVariableIntValue("BOARDES_SCREENSHOT_THEME_DARK") != 0) {
+		Theme::instance().forceTheme(true);
+	}
+
 	QTranslator qtTranslator;
 	if (qtTranslator.load(QLocale(QLocale::Japanese), QStringLiteral("qtbase"), QStringLiteral("_"),
 						   QLibraryInfo::path(QLibraryInfo::TranslationsPath))) {

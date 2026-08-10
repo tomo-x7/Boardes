@@ -7,6 +7,7 @@
 #include <QVBoxLayout>
 
 #include "../model/librarymanager.h"
+#include "theme.h"
 
 ExportPackageDialog::ExportPackageDialog(LibraryManager *libraryManager, const QStringList &dependencyLibraryIds,
 										 QWidget *parent)
@@ -33,7 +34,8 @@ ExportPackageDialog::ExportPackageDialog(LibraryManager *libraryManager, const Q
 			check->setText(tr("%1 (再配布可)").arg(name));
 		} else {
 			check->setText(tr("%1 (再配布不可)").arg(name));
-			check->setStyleSheet(QStringLiteral("color: #c04040;"));
+			// 仕様書§3.2のerrorトークン (ライト/ダークで値が異なる)。
+			check->setStyleSheet(QStringLiteral("color: %1;").arg(Theme::instance().errorColor().name()));
 		}
 		layout->addWidget(check);
 		m_checks.append(check);

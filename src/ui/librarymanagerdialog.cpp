@@ -22,6 +22,7 @@
 #include "librarymetadatadialog.h"
 #include "parteditordialog.h"
 #include "partpickerdialog.h"
+#include "theme.h"
 
 namespace {
 constexpr int kTypeRole = Qt::UserRole;
@@ -79,9 +80,11 @@ LibraryManagerDialog::LibraryManagerDialog(LibraryManager *libraryManager, QWidg
 	m_tree->setSelectionMode(QAbstractItemView::SingleSelection);
 
 	m_detailsLabel = new QLabel(this);
+	m_detailsLabel->setObjectName(QStringLiteral("libraryDetailsLabel"));
 	m_detailsLabel->setWordWrap(true);
 	m_detailsLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
 	m_detailsLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+	m_detailsLabel->setTextFormat(Qt::RichText);
 
 	auto *libraryGroup = new QGroupBox(tr("ライブラリ"), this);
 	m_newLibraryButton = new QPushButton(tr("新規ライブラリ..."), this);
@@ -176,6 +179,11 @@ LibraryManagerDialog::LibraryManagerDialog(LibraryManager *libraryManager, QWidg
 
 	connect(m_libraryManager, &LibraryManager::librariesChanged, this, &LibraryManagerDialog::refreshTree);
 	refreshTree();
+
+	// 大量の単発アクションボタンが並ぶダイアログなので、Qt が最初のボタンを暗黙に
+	// 「既定ボタン」扱いして黒塗りにしてしまうのを防ぐ (仕様書§7.6の:defaultはOK/作成/保存
+	// 用の強調であって、ここでは意味がない)。
+	Theme::suppressAutoDefault(this);
 }
 
 namespace {
@@ -316,6 +324,17 @@ void LibraryManagerDialog::updateButtonStates() {
 									   sel.itemId != LibraryManager::uncategorizedCategoryId());
 }
 
+namespace {
+// ID・バージョン・件数は等幅フォントで表示する (仕様書§4・§13)。値はユーザー入力に
+// 由来しうるので HTML エスケープする。
+QString monoSpan(const QString &s) {
+	return QStringLiteral("<span style='font-family:Consolas,\"SF Mono\",monospace'>%1</span>").arg(s.toHtmlEscaped());
+}
+QString monoSpan(int n) {
+	return monoSpan(QString::number(n));
+}
+}  // namespace
+
 void LibraryManagerDialog::updateDetails() {
 	const Selection sel = currentSelection();
 	const auto lib = sel.libId.isEmpty() ? nullptr : m_libraryManager->library(sel.libId);
@@ -328,39 +347,38 @@ void LibraryManagerDialog::updateDetails() {
 	if (sel.type == NodeType::Part) {
 		const auto part = lib->part(sel.itemId);
 		if (part) {
-			lines << tr("部品: %1 (%2)").arg(part->name, part->id);
-			lines << tr("ピン: %1個").arg(part->pins.size());
+			lines << tr("部品: %1 (%2)").arg(part->name.toHtmlEscaped(), monoSpan(part->id));
+			lines << tr("ピン: %1個").arg(monoSpan(part->pins.size()));
 		}
 	} else if (sel.type == NodeType::Board) {
 		const auto board = lib->board(sel.itemId);
 		if (board) {
-			lines << tr("基板: %1 (%2)").arg(board->name, board->id);
-			lines << tr("サイズ: %1 x %2 単位").arg(board->size.width()).arg(board->size.height());
+			lines << tr("基板: %1 (%2)").arg(board->name.toHtmlEscaped(), monoSpan(board->id));
+			lines << tr("サイズ: %1 x %2 単位").arg(monoSpan(board->size.width()), monoSpan(board->size.height()));
 		}
 	} else {
-		lines << tr("名前: %1").arg(lib->name);
-		lines << tr("ID: %1").arg(lib->id);
-		lines << tr("バージョン: %1").arg(lib->version.isEmpty() ? tr("(未設定)") : lib->version);
-		lines << tr("作者: %1").arg(lib->author.isEmpty() ? tr("(未設定)") : lib->author);
-		lines << tr("ライセンス: %1").arg(lib->license.displayName());
+		lines << tr("名前: %1").arg(lib->name.toHtmlEscaped());
+		lines << tr("ID: %1").arg(monoSpan(lib->id));
+		lines << tr("バージョン: %1").arg(lib->version.isEmpty() ? tr("(未設定)") : monoSpan(lib->version));
+		lines << tr("作者: %1").arg((lib->author.isEmpty() ? tr("(未設定)") : lib->author).toHtmlEscaped());
+		lines << tr("ライセンス: %1").arg(lib->license.displayName().toHtmlEscaped());
 		lines << tr("再配布: %1").arg(lib->redistribution.allowed ? tr("可") : tr("不可"));
 		lines << tr("部品: %1件 / 基板: %2件 / カテゴリ: %3件")
-					 .arg(lib->parts.size())
-					 .arg(lib->boards.size())
-					 .arg(lib->categories.size());
+					 .arg(monoSpan(lib->parts.size()), monoSpan(lib->boards.size()), monoSpan(lib->categories.size()));
 		if (!lib->basedOn.isEmpty()) {
 			QStringList based;
 			for (const auto &b : lib->basedOn) {
-				based << tr("%1 (v%2, %3)").arg(b.name, b.version, b.licenseLabel);
+				based << tr("%1 (v%2, %3)")
+							 .arg(b.name.toHtmlEscaped(), b.version.toHtmlEscaped(), b.licenseLabel.toHtmlEscaped());
 			}
 			lines << tr("取り込み元: %1").arg(based.join(QStringLiteral(", ")));
 		}
 		if (!lib->description.isEmpty()) {
 			lines << QString();
-			lines << lib->description;
+			lines << lib->description.toHtmlEscaped();
 		}
 	}
-	m_detailsLabel->setText(lines.join(QStringLiteral("\n")));
+	m_detailsLabel->setText(lines.join(QStringLiteral("<br>")));
 }
 
 bool LibraryManagerDialog::confirmRedistributionWarning(const QString &libId) {

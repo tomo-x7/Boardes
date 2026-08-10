@@ -75,9 +75,13 @@ private:
 	QSpinBox *m_holeDiameterSpin;
 	QComboBox *m_copperCombo;
 	QCheckBox *m_doubleSidedCheck;
+	// 正方形スウォッチ (色そのもの) + 隣に等幅フォントの hex 表示。仕様書§11。
 	QPushButton *m_substrateColorButton;
+	QLabel *m_substrateColorHexLabel;
 	QPushButton *m_padColorButton;
+	QLabel *m_padColorHexLabel;
 	QPushButton *m_copperColorButton;
+	QLabel *m_copperColorHexLabel;
 	QLabel *m_derivedLabel;
 	QDialogButtonBox *m_buttons = nullptr;
 
@@ -97,7 +101,7 @@ private:
 	std::optional<Artwork> m_backgroundFront;
 	std::optional<Artwork> m_backgroundBack;
 
-	static void updateColorButton(QPushButton *button, const QColor &color);
+	static void updateColorButton(QPushButton *swatch, QLabel *hexLabel, const QColor &color);
 	static void updateThumbnail(QLabel *thumb, const std::optional<Artwork> &art);
 	void loadBackgroundInto(std::optional<Artwork> &target, QLabel *thumb, const QString &dialogTitle);
 	BoardSpec boardFromFields() const;
