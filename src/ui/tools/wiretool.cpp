@@ -43,6 +43,9 @@ bool WireTool::mousePress(BoardScene *scene, QGraphicsSceneMouseEvent *event) {
 		m_activeScene = scene;
 		m_points = {snapped};
 	} else if (scene == m_activeScene) {
+		if (snapped == m_points.last()) {
+			return true;  // 直前の頂点と同じ点への再クリックは無視 (長さ0の区間を作らない)
+		}
 		m_points.append(snapped);
 	} else {
 		return true;  // 描画開始時と別の面でのクリックは無視
@@ -64,6 +67,17 @@ bool WireTool::mouseRelease(BoardScene *scene, QGraphicsSceneMouseEvent *) {
 	// press 側で処理は完結しているが、対になる release も消費したことにして
 	// Qt 側のデフォルト処理 (ラバーバンド選択の開始判定など) に渡さないようにする。
 	return m_activeScene == scene;
+}
+
+void WireTool::mouseLeave(BoardScene *scene) {
+	if (!m_activeScene || scene != m_activeScene) {
+		return;
+	}
+	// カーソルが今どこにあるか分からなくなったので、直前の頂点までの確定済み
+	// ポリラインは残したまま、そこから伸びるゴム線 (次のクリックまでの予告線) だけを
+	// 隠す。カーソル位置を最後の頂点自身にすることで、setWirePreview() の最後の
+	// drawLine() が長さ0になり見えなくなる。
+	scene->overlay()->setWirePreview(m_points, m_points.last(), wireLayerFor(m_kind, scene->side()));
 }
 
 bool WireTool::keyPress(BoardScene *, QKeyEvent *event) {

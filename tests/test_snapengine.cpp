@@ -10,6 +10,7 @@ private slots:
 	void snapsToNearestOfEightDirections();
 	void roundsDistanceToGranularityStep();
 	void handlesNegativeDirections();
+	void diagonalCursorOnGridPointStaysAtCursor();
 	void halfGranularityUsesFiveUnitSteps();
 	void freeGranularityUsesOneUnitSteps();
 	void snapsToGridUsingBoardOrigin();
@@ -24,8 +25,8 @@ void TestSnapEngine::snapsToNearestOfEightDirections() {
 	QCOMPARE(snap.snapForWireVertex(QPoint(0, 0), QPointF(100, 5)), QPoint(100, 0));
 	// ほぼ垂直 -> 真垂直にスナップ
 	QCOMPARE(snap.snapForWireVertex(QPoint(0, 0), QPointF(5, 100)), QPoint(0, 100));
-	// ほぼ45度 -> 真の45度にスナップ (投影距離 ≈72.1 -> 7段 -> 70,70)
-	QCOMPARE(snap.snapForWireVertex(QPoint(0, 0), QPointF(50, 52)), QPoint(70, 70));
+	// ほぼ45度 -> 真の45度にスナップ (投影距離 ≈72.1、斜め1段は10*√2 -> 5段 -> 50,50)
+	QCOMPARE(snap.snapForWireVertex(QPoint(0, 0), QPointF(50, 52)), QPoint(50, 50));
 }
 
 void TestSnapEngine::roundsDistanceToGranularityStep() {
@@ -40,8 +41,24 @@ void TestSnapEngine::roundsDistanceToGranularityStep() {
 void TestSnapEngine::handlesNegativeDirections() {
 	SnapEngine snap;
 	QCOMPARE(snap.snapForWireVertex(QPoint(0, 0), QPointF(-30, -3)), QPoint(-30, 0));
-	// 左下45度、距離=30*sqrt(2)≈42.4 -> 10単位で4段 -> (50,50)から(-40,-40)
-	QCOMPARE(snap.snapForWireVertex(QPoint(50, 50), QPointF(20, 20)), QPoint(10, 10));
+	// 左下45度、距離=30*sqrt(2)≈42.4、斜め1段は10*√2 -> 3段 -> (50,50)から(-30,-30)で(20,20)
+	QCOMPARE(snap.snapForWireVertex(QPoint(50, 50), QPointF(20, 20)), QPoint(20, 20));
+}
+
+void TestSnapEngine::diagonalCursorOnGridPointStaysAtCursor() {
+	// 斜め45度の格子点 (from から見て斜め方向の距離がちょうど pitch の整数倍) の上に
+	// カーソルがあるなら、スナップ結果はカーソルそのものと一致するべき。
+	// 直交方向の1段の長さは pitch だが、斜め方向の1段の長さは pitch*sqrt(2) であり、
+	// これを取り違えると (斜め方向の距離をそのまま pitch で割ってしまうと) √2 倍
+	// 遠い点にスナップしてしまう不具合があった。
+	SnapEngine snap;  // 既定 Full (10単位)
+	QCOMPARE(snap.snapForWireVertex(QPoint(0, 0), QPointF(30, 30)), QPoint(30, 30));
+	QCOMPARE(snap.snapForWireVertex(QPoint(0, 0), QPointF(-20, 20)), QPoint(-20, 20));
+	QCOMPARE(snap.snapForWireVertex(QPoint(0, 0), QPointF(-40, -40)), QPoint(-40, -40));
+
+	SnapEngine snapHalf;
+	snapHalf.setGranularity(units::Granularity::Half);  // 5単位刻み
+	QCOMPARE(snapHalf.snapForWireVertex(QPoint(0, 0), QPointF(15, 15)), QPoint(15, 15));
 }
 
 void TestSnapEngine::halfGranularityUsesFiveUnitSteps() {

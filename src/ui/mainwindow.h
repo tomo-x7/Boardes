@@ -50,6 +50,9 @@ public:
 
 protected:
 	void closeEvent(QCloseEvent *event) override;
+	// ステータスバーの倍率バーの位置合わせ用 (改善提案2 #4)。左サイドバー・右ドックの
+	// 現在幅を監視し、対応する余白を追従させる。
+	bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
 	void onAboutTriggered();
@@ -93,9 +96,16 @@ private:
 	DrcPanel *m_drcPanel = nullptr;
 	StatsPanel *m_statsPanel = nullptr;
 	ObjectListPanel *m_objectListPanel = nullptr;
-	// ステータスバー左 (表面用) / 右 (裏面用) に常設する倍率バー。
+	QDockWidget *m_sidePanelDock = nullptr;
+	// ステータスバー左 (表面用) / 右 (裏面用) に常設する倍率バー。表面/裏面それぞれの
+	// キャンバス列の中央に来るよう、m_zoomBarStrip 内に配置する (改善提案2 #4)。
 	ZoomBar *m_zoomBarFront = nullptr;
 	ZoomBar *m_zoomBarBack = nullptr;
+	QWidget *m_zoomBarStrip = nullptr;
+	// 左 = 部品セレクタ (m_partSelector) の現在幅、右 = 右ドックの現在幅に追従する空スペーサ。
+	// これにより m_zoomBarStrip の残り (flex) 部分が表面/裏面キャンバス列の合計幅と一致する。
+	QWidget *m_zoomLeftSpacer = nullptr;
+	QWidget *m_zoomRightSpacer = nullptr;
 	ViewLinkController *m_viewLink = nullptr;
 
 	// ツールバーのカスタマイズ (Phase 19)。commandId → QAction の登録簿と、
@@ -109,6 +119,9 @@ private:
 	void setupToolsToolbar();
 	void setupFileMenuConnections();
 	void setupSidePanelDock();
+	// m_zoomBarStrip の左右スペーサ幅を、部品セレクタ/右ドックの現在幅に合わせ直す
+	// (改善提案2 #4)。eventFilter() 経由でそれぞれのリサイズ時に呼ばれる。
+	void updateZoomStripSpacers();
 	// toolbarlayout::load() の内容を実際のツールバーへ反映する。builtin (表示/ツール)
 	// は表示/非表示とボタンスタイルのみ変更し、それ以外 (ユーザー作成分) は
 	// 毎回組み立て直す。ToolbarCustomizeDialog::layoutsChanged からも呼ばれる。

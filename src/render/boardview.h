@@ -51,6 +51,7 @@ protected:
 	void keyPressEvent(QKeyEvent *event) override;
 	void keyReleaseEvent(QKeyEvent *event) override;
 	void focusInEvent(QFocusEvent *event) override;
+	void leaveEvent(QEvent *event) override;
 
 private:
 	qreal m_zoom = 1.0;

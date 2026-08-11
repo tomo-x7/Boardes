@@ -309,3 +309,9 @@ void BoardScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event) {
 	}
 	QGraphicsScene::contextMenuEvent(event);
 }
+
+void BoardScene::notifyViewLeave() {
+	if (m_toolManager) {
+		m_toolManager->handleMouseLeave(this);
+	}
+}

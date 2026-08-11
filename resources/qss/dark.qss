@@ -85,7 +85,9 @@ QDockWidget::title {
 }
 
 QTabWidget::pane { border: none; }
-QTabBar { background: #232323; }
+/* border-bottom はコンテナ自体に全幅で持たせ、選択中タブがその上に太い下線を重ねる
+   2段構成 (改善提案2 #5)。表面/裏面ヘッダの全幅下線 (viewHeaderFront/Back) と揃えるため。 */
+QTabBar { background: #232323; border-bottom: 1px solid #454545; }
 QTabBar::tab {
 	background: transparent;
 	padding: 8px 16px;

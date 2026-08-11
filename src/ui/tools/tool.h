@@ -51,6 +51,13 @@ public:
 		Q_UNUSED(event);
 		return false;
 	}
+	// カーソルがビューの外に出た。ドラッグ操作の途中ではなく、単なる通知
+	// (消費する/しないの区別は無い)。カーソル位置に追従する一時的な表示
+	// (配線プレビューの「確定済み頂点 -> 現在位置」のゴム線など) を、もう存在しない
+	// カーソル位置に向けて残したままにしないためのフック。既定では何もしない。
+	virtual void mouseLeave(BoardScene *scene) {
+		Q_UNUSED(scene);
+	}
 	virtual bool contextMenu(BoardScene *scene, QGraphicsSceneContextMenuEvent *event) {
 		Q_UNUSED(scene);
 		Q_UNUSED(event);

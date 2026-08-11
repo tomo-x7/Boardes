@@ -7,6 +7,7 @@
 #include "model/librarymanager.h"
 #include "render/boardscene.h"
 #include "render/boardview.h"
+#include "render/items/overlayitem.h"
 #include "render/items/placementitem.h"
 #include "render/items/wireitem.h"
 #include "ui/tools/placeparttool.h"
@@ -31,6 +32,9 @@ private slots:
 	void selectToolDeleteKeyRemovesSelection();
 	void wireToolDrawsPolylineOnClicksAndFinishesOnRightClick();
 	void wireToolEscDiscardsInProgressWire();
+	void wireToolIgnoresClickOnSameVertexAgain();
+	void wireToolOverlayBoundsCoverConfirmedPointsAndCursor();
+	void wireToolHidesRubberSegmentWhenMouseLeavesView();
 	void rotateShortcutRotatesSelection();
 	void hoveringWireHighlightsWholeNetButNotOtherNets();
 	void escapeReturnsPlacePartToolToSelectTool();
@@ -115,6 +119,12 @@ void TestToolsIntegration::init() {
 	// 付近にしておく。fitBoardToWindow だとスケールが変わり計算が煩雑になるため
 	// 使わない。
 	m_frontView->resetZoom();
+	// offscreen QPA では、直前のテストが破棄したウィンドウの最後のグローバル座標と
+	// 今回の移動先がたまたま一致すると、QTest::mouseMove() が「移動なし」とみなして
+	// イベントを送らないことがある (各テストが同じサイズ・同じ位置にウィンドウを
+	// 作り直すため起こりやすい)。原点付近へのダミー移動を挟んで、この後の本番の
+	// mouseMove が必ず「実際に動いた」と認識されるようにしておく。
+	QTest::mouseMove(m_frontView->viewport(), QPoint(1, 1));
 }
 
 void TestToolsIntegration::cleanup() {
@@ -228,6 +238,55 @@ void TestToolsIntegration::wireToolEscDiscardsInProgressWire() {
 	// 何も作図していない状態でもう一度 Esc すると、今度は選択ツールに戻る。
 	m_toolManager->cancelCurrent();
 	QVERIFY(dynamic_cast<SelectTool *>(m_toolManager->activeTool()) != nullptr);
+}
+
+void TestToolsIntegration::wireToolIgnoresClickOnSameVertexAgain() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+
+	// 直前に置いた頂点と同じ格子点をもう一度クリックしても、長さ0の区間を
+	// 作ってはいけない (以前は重複頂点がそのまま Wire::points に入っていた)。
+	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
+	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
+	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QTest::mouseClick(m_frontView->viewport(), Qt::RightButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+
+	QCOMPARE(m_doc->wires.size(), 1);
+	QCOMPARE(m_doc->wires[0]->points.size(), 2);
+	QCOMPARE(m_doc->wires[0]->points[0], QPoint(20, 20));
+	QCOMPARE(m_doc->wires[0]->points[1], QPoint(60, 20));
+}
+
+void TestToolsIntegration::wireToolOverlayBoundsCoverConfirmedPointsAndCursor() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+
+	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
+	QTest::mouseMove(m_frontView->viewport(), viewPosFor(QPoint(20, 220)));
+
+	// OverlayItem::boundingRect() は確定済みの頂点とカーソル位置の両方を覆っている
+	// 必要がある。以前はカーソル周辺の固定 12x12 の箱しか返さず、離れた場所にある
+	// 頂点やカーソルの軌跡が再描画されず画面に残ったままになるバグがあった。
+	const QRectF bounds = m_frontScene->overlay()->boundingRect();
+	QVERIFY2(bounds.height() > 100, qPrintable(QString("height=%1").arg(bounds.height())));
+	QVERIFY(bounds.top() < 30);
+	QVERIFY(bounds.bottom() > 210);
+
+	m_toolManager->cancelCurrent();
+}
+
+void TestToolsIntegration::wireToolHidesRubberSegmentWhenMouseLeavesView() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+
+	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
+	QTest::mouseMove(m_frontView->viewport(), viewPosFor(QPoint(20, 220)));
+	QVERIFY(m_frontScene->overlay()->boundingRect().bottom() > 210);
+
+	// カーソルがビューの外に出たら、確定済みの頂点までのポリラインは残したまま、
+	// そこから伸びる予告線 (ゴム線) だけを隠す。境界がカーソルの軌跡までは
+	// 含まなくなり、最後の頂点付近まで縮むはず。
+	m_frontScene->notifyViewLeave();
+	QVERIFY(m_frontScene->overlay()->boundingRect().bottom() < 30);
+
+	m_toolManager->cancelCurrent();
 }
 
 void TestToolsIntegration::rotateShortcutRotatesSelection() {

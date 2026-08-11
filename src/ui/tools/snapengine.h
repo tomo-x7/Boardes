@@ -86,7 +86,9 @@ public:
 		const double dirLen = std::hypot(kDirX[octant], kDirY[octant]);  // 1 または sqrt(2)
 		const double projected = (delta.x() * kDirX[octant] + delta.y() * kDirY[octant]) / dirLen;
 		const int s = step();
-		const int numSteps = qMax(0, qRound(projected / s));
+		// 実距離は dirLen * numSteps * s (斜め方向は dirLen=sqrt(2)) なので、
+		// projected (from からの距離) を s だけでなく dirLen でも割る必要がある。
+		const int numSteps = qMax(0, qRound(projected / (s * dirLen)));
 
 		return from + QPoint(kDirX[octant] * numSteps * s, kDirY[octant] * numSteps * s);
 	}

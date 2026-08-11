@@ -91,3 +91,8 @@ bool ToolManager::handleKeyPress(BoardScene *scene, QKeyEvent *event) {
 bool ToolManager::handleContextMenu(BoardScene *scene, QGraphicsSceneContextMenuEvent *event) {
 	return m_activeTool && m_activeTool->contextMenu(scene, event);
 }
+void ToolManager::handleMouseLeave(BoardScene *scene) {
+	if (m_activeTool) {
+		m_activeTool->mouseLeave(scene);
+	}
+}

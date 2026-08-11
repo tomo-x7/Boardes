@@ -206,6 +206,7 @@ void MainWindow::setupCentralWidget() {
 
 void MainWindow::setupSidePanelDock() {
 	auto *dock = new QDockWidget(QStringLiteral("パネル"), this);
+	m_sidePanelDock = dock;
 	dock->setObjectName(QStringLiteral("sidePanelDock"));
 	// タイトルバーは廃止し、タブ列がドック最上部に来るようにする (仕様書§6.3。タイトルは
 	// タブ名で十分で冗長なため)。空ウィジェットを渡すと高さ0になり事実上非表示にできる。
@@ -232,6 +233,22 @@ void MainWindow::setupSidePanelDock() {
 	connect(&m_libraryManager, &LibraryManager::librariesChanged, m_objectListPanel, &ObjectListPanel::refresh);
 }
 
+bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
+	if (event->type() == QEvent::Resize && (watched == m_partSelector || watched == m_sidePanelDock)) {
+		updateZoomStripSpacers();
+	}
+	return QMainWindow::eventFilter(watched, event);
+}
+
+void MainWindow::updateZoomStripSpacers() {
+	if (m_zoomLeftSpacer && m_partSelector) {
+		m_zoomLeftSpacer->setFixedWidth(m_partSelector->width());
+	}
+	if (m_zoomRightSpacer && m_sidePanelDock) {
+		m_zoomRightSpacer->setFixedWidth(m_sidePanelDock->width());
+	}
+}
+
 void MainWindow::setupViewMenuAndToolbar() {
 	auto *toolbar = addToolBar(QStringLiteral("表示"));
 	toolbar->setObjectName(QStringLiteral("viewToolBar"));
@@ -252,6 +269,9 @@ void MainWindow::setupViewMenuAndToolbar() {
 	});
 	m_actionRegistry.add(QStringLiteral("toolbar.view.zoomOut"), zoomOutAction);
 	QAction *zoomResetAction = toolbar->addAction(QStringLiteral("100%"));
+	// 数値そのものが状態表示 (現在倍率) を兼ねるように見えるが、実際は固定のリセット
+	// アクションなので、ホバーで区別が付くようにツールチップを明示する (改善提案2 #8)。
+	zoomResetAction->setToolTip(tr("ズームを100%にリセットします"));
 	connect(zoomResetAction, &QAction::triggered, this, [this] {
 		m_frontView->resetZoom();
 		m_backView->resetZoom();
@@ -457,13 +477,41 @@ void MainWindow::setupViewMenuAndToolbar() {
 
 	// 表面/裏面それぞれ専用の倍率バーをステータスバー左右に常設する (以前はフォーカス中の
 	// ビューへ1個を切り替える方式だったが、両方を常に操作できるようにした)。
-	// addWidget() はステータスバーの通常領域 (左寄り)、addPermanentWidget() は右端に置く。
+	// 既知の差分だった配置ズレ (改善提案2 #4): 単純に addWidget()/addPermanentWidget() で
+	// ステータスバー自身の左右端に詰めると、表面バーが左サイドバーの下に、裏面バーが
+	// 右ドックの下にかかってしまい、対応するキャンバス列とズレる。左右に部品セレクタ/
+	// 右ドックの現在幅と同じ幅の空スペーサを置き、その間 (flex) に表面/裏面バーを
+	// 均等2分割で中央寄せすることで、キャンバス列 (サイドバー | 表面 | 裏面 | ドック) と
+	// 同じ列構成にする (redesign-main-window-{light,dark}.html 参照)。
 	m_zoomBarFront = new ZoomBar(this);
 	m_zoomBarFront->setTargetView(m_frontView);
-	ui->statusbar->addWidget(m_zoomBarFront);
 	m_zoomBarBack = new ZoomBar(this);
 	m_zoomBarBack->setTargetView(m_backView);
-	ui->statusbar->addPermanentWidget(m_zoomBarBack);
+
+	m_zoomBarStrip = new QWidget(this);
+	auto *stripLayout = new QHBoxLayout(m_zoomBarStrip);
+	stripLayout->setContentsMargins(0, 0, 0, 0);
+	stripLayout->setSpacing(0);
+	m_zoomLeftSpacer = new QWidget(m_zoomBarStrip);
+	stripLayout->addWidget(m_zoomLeftSpacer);
+	auto addCentered = [stripLayout](ZoomBar *bar) {
+		auto *centerLayout = new QHBoxLayout();
+		centerLayout->addStretch(1);
+		centerLayout->addWidget(bar);
+		centerLayout->addStretch(1);
+		stripLayout->addLayout(centerLayout, 1);
+	};
+	addCentered(m_zoomBarFront);
+	addCentered(m_zoomBarBack);
+	m_zoomRightSpacer = new QWidget(m_zoomBarStrip);
+	stripLayout->addWidget(m_zoomRightSpacer);
+	ui->statusbar->addWidget(m_zoomBarStrip, 1);
+
+	m_partSelector->installEventFilter(this);
+	if (m_sidePanelDock) {
+		m_sidePanelDock->installEventFilter(this);
+	}
+	updateZoomStripSpacers();
 
 	// 表示メニューの末尾: ツールバー・ドックの表示/非表示 (LibreOffice 同様、メニューバー
 	// 自体はカスタマイズ対象外) と、カスタマイズ系ダイアログ。

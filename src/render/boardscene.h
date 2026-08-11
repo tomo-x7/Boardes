@@ -106,6 +106,10 @@ public:
 		m_toolManager = toolManager;
 	}
 
+	// ビュー (BoardView) からカーソルが出たときに呼ぶ。アクティブなツールへ中継する
+	// (WireTool がカーソル追従のゴム線を隠す、など)。
+	void notifyViewLeave();
+
 protected:
 	void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
 	void mouseMoveEvent(QGraphicsSceneMouseEvent *event) override;

@@ -46,6 +46,8 @@ public:
 	bool handleMouseDoubleClick(BoardScene *scene, QGraphicsSceneMouseEvent *event);
 	bool handleKeyPress(BoardScene *scene, QKeyEvent *event);
 	bool handleContextMenu(BoardScene *scene, QGraphicsSceneContextMenuEvent *event);
+	// カーソルがビューの外に出たときの通知 (BoardView::leaveEvent から)。
+	void handleMouseLeave(BoardScene *scene);
 
 signals:
 	void statusHintChanged(const QString &hint);

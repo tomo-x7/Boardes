@@ -3,6 +3,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QTextEdit>
@@ -33,9 +34,12 @@ LicensePickerWidget::LicensePickerWidget(QWidget *parent) : QWidget(parent) {
 	m_customAllowedCheck = new QCheckBox(tr("再配布を許可する"), this);
 	m_customAttributionCheck = new QCheckBox(tr("著作権表示を必須にする"), this);
 
-	m_customFieldsWidget = new QWidget(this);
+	// 「ライセンス詳細」見出しを付けた QGroupBox にする (改善提案2 #2)。ライブラリ自体の
+	// 「名前:」欄とカスタムライセンスの「名前:」欄が見た目上区切りなく並んでいたため、
+	// 他画面のグループ見出し (§7.3 のドックタイトルと同じ視覚言語、太字+下線の近似) と
+	// 揃えて区切りを明示する。
+	m_customFieldsWidget = new QGroupBox(tr("ライセンス詳細"), this);
 	auto *customForm = new QFormLayout(m_customFieldsWidget);
-	customForm->setContentsMargins(0, 0, 0, 0);
 	customForm->addRow(tr("名前:"), m_customNameEdit);
 	customForm->addRow(tr("URL:"), m_customUrlEdit);
 	customForm->addRow(tr("全文:"), m_customTextEdit);

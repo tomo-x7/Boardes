@@ -164,3 +164,10 @@ void BoardView::focusInEvent(QFocusEvent *event) {
 	QGraphicsView::focusInEvent(event);
 	emit focusReceived(this);
 }
+
+void BoardView::leaveEvent(QEvent *event) {
+	QGraphicsView::leaveEvent(event);
+	if (auto *bs = qobject_cast<BoardScene *>(scene())) {
+		bs->notifyViewLeave();
+	}
+}

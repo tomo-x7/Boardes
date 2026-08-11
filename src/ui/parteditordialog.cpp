@@ -80,7 +80,10 @@ QPoint PartArtworkCanvas::widgetToImage(const QPoint &widgetPos) const {
 
 void PartArtworkCanvas::paintEvent(QPaintEvent *) {
 	QPainter painter(this);
-	painter.fillRect(rect(), palette().color(QPalette::Dark));
+	// キャンバス背景は canvas-bg 固定色 (#3C3C3C、boardview.cpp の表面/裏面ビューと同じ値。
+	// 仕様書§12既知の差分)。以前は palette().color(QPalette::Dark) を使っており、パレット
+	// 依存のため実際には約 #9F9F9F になり、ライト/ダークで背景まで変わってしまっていた。
+	painter.fillRect(rect(), QColor(60, 60, 60));
 	if (m_image.isNull()) {
 		return;
 	}
@@ -200,7 +203,12 @@ PartEditorDialog::PartEditorDialog(QWidget *parent) : QDialog(parent) {
 	canvasScroll->setWidget(m_canvas);
 	canvasScroll->setMinimumSize(300, 300);
 	// キャンバスより余ったビューポート領域も同じ暗色で塗り、小さい画像でも
-	// 浮いた明るい余白ができないようにする。
+	// 浮いた明るい余白ができないようにする。QPalette::Dark はテーマによって値が変わって
+	// しまうため、このウィジェットに限りロールの色自体を canvas-bg 固定色で上書きする
+	// (仕様書§12既知の差分。PartArtworkCanvas::paintEvent と同じ値)。
+	QPalette canvasScrollPalette = canvasScroll->palette();
+	canvasScrollPalette.setColor(QPalette::Dark, QColor(60, 60, 60));
+	canvasScroll->setPalette(canvasScrollPalette);
 	canvasScroll->setBackgroundRole(QPalette::Dark);
 	canvasColumn->addWidget(canvasScroll, /*stretch=*/1);
 	auto *chromaRow = new QHBoxLayout();

@@ -10,6 +10,7 @@ class QLineEdit;
 class QTextEdit;
 class QLabel;
 class QCheckBox;
+class QGroupBox;
 
 // ライセンス種別 (LicenseKind) の選択 + Custom 選択時の追加フィールド + そのライセンスから
 // 導出される再配布ルールのプレビューをまとめたウィジェット。
@@ -44,7 +45,9 @@ private slots:
 
 private:
 	QComboBox *m_kindCombo;
-	QWidget *m_customFieldsWidget;
+	// 「ライセンス詳細」見出し付きの QGroupBox (改善提案2 #2)。ライブラリ自体の「名前:」欄と
+	// カスタムライセンスの「名前:」欄が無区切りで並んで紛らわしかったための追加。
+	QGroupBox *m_customFieldsWidget;
 	QLineEdit *m_customNameEdit;
 	QLineEdit *m_customUrlEdit;
 	QTextEdit *m_customTextEdit;

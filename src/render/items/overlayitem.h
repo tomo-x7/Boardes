@@ -10,7 +10,6 @@
 // ツールが一時的に表示する描画をまとめて受け持つアイテム (モデルには一切影響しない)。
 //   - WireTool の「入力中の配線」プレビュー
 //   - DraftTool の下書きストローク (保存・エクスポートされない一時レイヤ)
-//   - スナップ位置のヒント表示
 //   - PlacePartTool の配置プレビュー (ゴースト)
 class OverlayItem : public QGraphicsItem {
 public:
@@ -38,9 +37,6 @@ public:
 	void setLiveDraftStroke(const QVector<QPointF> &points);
 	void clearLiveDraftStroke();
 
-	// スナップ先のヒント (小さな十字/丸)。
-	void setSnapHint(QPoint pos, bool visible);
-
 private:
 	bool m_hasWirePreview = false;
 	QVector<QPoint> m_wirePoints;
@@ -49,9 +45,6 @@ private:
 
 	QVector<QVector<QPointF>> m_draftStrokes;
 	QVector<QPointF> m_liveDraftStroke;
-
-	bool m_snapHintVisible = false;
-	QPoint m_snapHintPos;
 
 	bool m_hasGhost = false;
 	QImage m_ghostImage;

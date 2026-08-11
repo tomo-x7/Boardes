@@ -191,7 +191,10 @@ void ToolbarCustomizeDialog::updateEditableState() {
 	m_upButton->setEnabled(isCustom);
 	m_downButton->setEnabled(isCustom);
 	m_separatorButton->setEnabled(isCustom);
-	m_availableList->setEnabled(isCustom);
+	// リスト自体は無効化しない (改善提案2 #1)。既定ツールバーでは「追加 >」がどのみち
+	// 無効なので選択自体は無害であり、リストを丸ごと disabled にすると Qt が文字色を
+	// 一括で text-disabled 相当に落としてしまい、隣の「ツールバーの内容」リストとの
+	// 非対称さから「壊れている」ように見えてしまう。無効化はボタン側だけに絞る。
 	m_itemsList->setEnabled(layout != nullptr);
 }
 
