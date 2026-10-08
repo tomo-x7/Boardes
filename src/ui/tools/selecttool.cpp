@@ -103,30 +103,45 @@ void SelectTool::syncSelectionAcrossScenes(BoardScene *changedScene) {
 	m_syncingSelection = false;
 }
 
-QVector<QString> SelectTool::selectedPlacementUuids() const {
+namespace {
+
+// 表裏どちらのシーンで選択されているアイテムも含めて、Item 型のものの uuid を集める。
+//
+// 部品と外形線は表裏のシーンどちらにも同じ uuid のアイテムがあり、選択もミラーされる。一方、
+// 裏面の配線 (BackBare/BackInsulated) は裏面シーンにしか無い。表面のシーンだけを見ると裏面の
+// 配線の選択を取りこぼし、そのまま足し合わせると両方にあるアイテムを2回数えてしまうので、
+// uuid の重複は除く (二重に削除・回転・複製しないため)。
+template <typename Item, typename UuidOf>
+QVector<QString> selectedUuids(const ToolContext &context, UuidOf uuidOf) {
 	QVector<QString> out;
-	if (!m_context->frontScene) {
-		return out;
-	}
-	for (QGraphicsItem *item : m_context->frontScene->selectedItems()) {
-		if (auto *pi = dynamic_cast<PlacementItem *>(item)) {
-			out.append(pi->placement()->uuid);
+	QSet<QString> seen;
+	for (const BoardScene *scene : {context.frontScene, context.backScene}) {
+		if (!scene) {
+			continue;
+		}
+		for (QGraphicsItem *item : scene->selectedItems()) {
+			const auto *typed = dynamic_cast<Item *>(item);
+			if (!typed) {
+				continue;
+			}
+			const QString uuid = uuidOf(typed);
+			if (!seen.contains(uuid)) {
+				seen.insert(uuid);
+				out.append(uuid);
+			}
 		}
 	}
 	return out;
 }
 
+}  // namespace
+
+QVector<QString> SelectTool::selectedPlacementUuids() const {
+	return selectedUuids<PlacementItem>(*m_context, [](const PlacementItem *item) { return item->placement()->uuid; });
+}
+
 QVector<QString> SelectTool::selectedWireUuids() const {
-	QVector<QString> out;
-	if (!m_context->frontScene) {
-		return out;
-	}
-	for (QGraphicsItem *item : m_context->frontScene->selectedItems()) {
-		if (auto *wi = dynamic_cast<WireItem *>(item)) {
-			out.append(wi->wire()->uuid);
-		}
-	}
-	return out;
+	return selectedUuids<WireItem>(*m_context, [](const WireItem *item) { return item->wire()->uuid; });
 }
 
 void SelectTool::clearNetHighlight() {
@@ -507,15 +522,24 @@ void SelectTool::pasteWithOffset(QPoint offset) {
 	}
 	stack->endMacro();
 
-	if (m_context->frontScene) {
-		m_context->frontScene->clearSelection();
+	// 貼り付けたものを選択する。裏面の配線は裏面シーンにしか無いので、シーンごとに自分が持つ
+	// アイテムを選ぶ。片方のシーンの選択をもう片方へ写す syncSelectionAcrossScenes() は、
+	// 相手にしか無い配線の選択を外してしまうので、ここでは止めておく。
+	m_syncingSelection = true;
+	for (BoardScene *scene : {m_context->frontScene, m_context->backScene}) {
+		if (!scene) {
+			continue;
+		}
+		scene->clearSelection();
 		for (const auto &uuid : newPlacementUuids) {
-			if (auto *item = m_context->frontScene->placementItemFor(uuid)) item->setSelected(true);
+			if (auto *item = scene->placementItemFor(uuid)) item->setSelected(true);
 		}
 		for (const auto &uuid : newWireUuids) {
-			if (auto *item = m_context->frontScene->wireItemFor(uuid)) item->setSelected(true);
+			if (auto *item = scene->wireItemFor(uuid)) item->setSelected(true);
 		}
 	}
+	m_syncingSelection = false;
+	emitSelectionSummary();
 }
 
 void SelectTool::pasteAt(QPointF modelPos) {

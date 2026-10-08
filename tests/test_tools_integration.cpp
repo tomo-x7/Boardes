@@ -1,9 +1,12 @@
 #include <QImage>
 #include <QMouseEvent>
 #include <QScrollBar>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTreeWidget>
 
+#include "core/units.h"
 #include "io/partio.h"
 #include "model/document.h"
 #include "model/librarymanager.h"
@@ -13,6 +16,7 @@
 #include "render/items/placementitem.h"
 #include "render/items/wireitem.h"
 #include "ui/mainwindow.h"
+#include "ui/objectlistpanel.h"
 #include "ui/tools/drafttool.h"
 #include "ui/tools/placeparttool.h"
 #include "ui/tools/selecttool.h"
@@ -34,6 +38,11 @@ private slots:
 	void placePartToolAddsPlacementOnClick();
 	void selectToolDragMovesPlacementWithUndo();
 	void selectToolDeleteKeyRemovesSelection();
+	void selectToolDeleteKeyRemovesBackWireWithUndo();
+	void selectToolCopiesAndPastesBackWire();
+	void selectToolProcessesItemsSelectedInBothScenesOnce();
+	void selectionSummaryCountsBackWire();
+	void objectListHighlightsBackWireSelectedInBackScene();
 	void wireToolDrawsPolylineOnClicksAndFinishesOnRightClick();
 	void wireToolEscDiscardsInProgressWire();
 	void wireToolIgnoresClickOnSameVertexAgain();
@@ -61,13 +70,17 @@ private:
 	std::unique_ptr<BoardScene> m_frontScene;
 	std::unique_ptr<BoardScene> m_backScene;
 	std::unique_ptr<BoardView> m_frontView;
+	std::unique_ptr<BoardView> m_backView;
 	std::unique_ptr<ToolManager> m_toolManager;
 
 	QString m_libId;
 	QString m_partId;
 
 	QPoint viewPosFor(QPoint sceneUnitPos) const;
+	QPoint backViewPosFor(QPoint modelPos) const;
 	QPoint scrollPosition() const;
+	bool showBackView();
+	void addWire(const QString &uuid, WireLayer layer, const QVector<QPoint> &points);
 	void dragMoveTo(QPoint viewPos, Qt::MouseButton heldButton = Qt::LeftButton);
 };
 
@@ -144,6 +157,7 @@ void TestToolsIntegration::init() {
 }
 
 void TestToolsIntegration::cleanup() {
+	m_backView.reset();
 	m_frontView.reset();
 	m_toolManager.reset();
 	m_backScene.reset();
@@ -157,8 +171,37 @@ QPoint TestToolsIntegration::viewPosFor(QPoint sceneUnitPos) const {
 	return m_frontView->mapFromScene(QPointF(sceneUnitPos));
 }
 
+// 裏面ビューの上で、モデル座標 modelPos に見える位置。
+QPoint TestToolsIntegration::backViewPosFor(QPoint modelPos) const {
+	return m_backView->mapFromScene(m_backScene->fromModel(QPointF(modelPos)));
+}
+
 QPoint TestToolsIntegration::scrollPosition() const {
 	return QPoint(m_frontView->horizontalScrollBar()->value(), m_frontView->verticalScrollBar()->value());
+}
+
+// 裏面シーンを表示するビューを作る (表面ビューと同じ設定)。
+bool TestToolsIntegration::showBackView() {
+	m_backView = std::make_unique<BoardView>();
+	m_backView->setScene(m_backScene.get());
+	m_backView->resize(600, 600);
+	m_backView->show();
+	if (!QTest::qWaitForWindowExposed(m_backView.get())) {
+		return false;
+	}
+	m_backView->resetZoom();
+	return true;
+}
+
+// 配線を直接ドキュメントに足して、両シーンへ反映する (Undo スタックには積まない)。
+void TestToolsIntegration::addWire(const QString &uuid, WireLayer layer, const QVector<QPoint> &points) {
+	auto wire = std::make_shared<Wire>();
+	wire->uuid = uuid;
+	wire->layer = layer;
+	wire->points = points;
+	m_doc->wires.append(wire);
+	m_frontScene->syncWires();
+	m_backScene->syncWires();
 }
 
 // ボタンを押したままのマウス移動を送る。QTest::mouseMove() はボタンを押していない移動に
@@ -233,6 +276,140 @@ void TestToolsIntegration::selectToolDeleteKeyRemovesSelection() {
 
 	m_doc->undoStack()->undo();
 	QCOMPARE(m_doc->placements.size(), 1);
+}
+
+void TestToolsIntegration::selectToolDeleteKeyRemovesBackWireWithUndo() {
+	QVERIFY(showBackView());
+	addWire("wb", WireLayer::BackBare, {QPoint(20, 100), QPoint(100, 100)});
+	// 裏面の配線は裏面シーンにしか無い。表面シーンには対応するアイテムが無い。
+	QVERIFY(m_frontScene->wireItemFor("wb") == nullptr);
+	QVERIFY(m_backScene->wireItemFor("wb") != nullptr);
+	m_toolManager->activateSelectTool();
+
+	QTest::mouseClick(m_backView->viewport(), Qt::LeftButton, Qt::NoModifier, backViewPosFor(QPoint(60, 100)));
+	QVERIFY(m_backScene->wireItemFor("wb")->isSelected());
+
+	QTest::keyClick(m_backView->viewport(), Qt::Key_Delete);
+	QCOMPARE(m_doc->wires.size(), 0);
+	QVERIFY(m_backScene->wireItemFor("wb") == nullptr);
+
+	m_doc->undoStack()->undo();
+	QCOMPARE(m_doc->wires.size(), 1);
+	QVERIFY(m_backScene->wireItemFor("wb") != nullptr);
+}
+
+void TestToolsIntegration::selectToolCopiesAndPastesBackWire() {
+	QVERIFY(showBackView());
+	addWire("wb", WireLayer::BackBare, {QPoint(20, 100), QPoint(100, 100)});
+	m_toolManager->activateSelectTool();
+	auto *vp = m_backView->viewport();
+
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, backViewPosFor(QPoint(60, 100)));
+	QTest::keyClick(vp, Qt::Key_C, Qt::ControlModifier);
+	QCOMPARE(m_toolManager->context().clipboardWires.size(), 1);
+	QCOMPARE(m_toolManager->context().clipboardPlacements.size(), 0);
+
+	// 貼り付けると同じ裏面の配線がずれた位置にできる。貼り付けたものが選択され、元の配線は外れる。
+	QTest::keyClick(vp, Qt::Key_V, Qt::ControlModifier);
+	QCOMPARE(m_doc->wires.size(), 2);
+	QCOMPARE(static_cast<int>(m_doc->wires[1]->layer), static_cast<int>(WireLayer::BackBare));
+	QCOMPARE(m_doc->wires[1]->points[0], QPoint(20, 100) + QPoint(units::Pitch * 2, units::Pitch * 2));
+	QVERIFY(m_backScene->wireItemFor(m_doc->wires[1]->uuid)->isSelected());
+	QVERIFY(!m_backScene->wireItemFor("wb")->isSelected());
+}
+
+void TestToolsIntegration::selectToolProcessesItemsSelectedInBothScenesOnce() {
+	// 部品と外形線は表裏どちらのシーンにも同じ uuid のアイテムがあり、選択も両方にミラーされる。
+	// 両シーンの選択を合わせて見るとき、同じものを2回数えたり、2回削除・複製したりしてはいけない。
+	auto placement = std::make_shared<Placement>();
+	placement->uuid = "p1";
+	placement->libraryId = m_libId;
+	placement->partId = m_partId;
+	placement->pos = QPoint(50, 50);
+	m_doc->placements.append(placement);
+	m_frontScene->syncPlacements();
+	m_backScene->syncPlacements();
+	addWire("wo", WireLayer::Outline, {QPoint(20, 150), QPoint(100, 150)});
+	m_toolManager->activateSelectTool();
+	QSignalSpy summary(m_toolManager.get(), &ToolManager::selectionSummaryChanged);
+	auto *vp = m_frontView->viewport();
+
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(55, 55)));
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::ShiftModifier, viewPosFor(QPoint(60, 150)));
+	// 前提: 裏面シーンにもミラーされている。
+	QVERIFY(m_backScene->placementItemFor("p1")->isSelected());
+	QVERIFY(m_backScene->wireItemFor("wo")->isSelected());
+	QCOMPARE(summary.last().first().toString(), QString("選択: 部品1 / 配線1"));
+
+	QTest::keyClick(vp, Qt::Key_C, Qt::ControlModifier);
+	QCOMPARE(m_toolManager->context().clipboardPlacements.size(), 1);
+	QCOMPARE(m_toolManager->context().clipboardWires.size(), 1);
+
+	// 削除は1つのマクロで、部品1つと配線1つに対するコマンドだけを積む。
+	QTest::keyClick(vp, Qt::Key_Delete);
+	QCOMPARE(m_doc->placements.size(), 0);
+	QCOMPARE(m_doc->wires.size(), 0);
+	QCOMPARE(m_doc->undoStack()->count(), 1);
+	QCOMPARE(m_doc->undoStack()->command(0)->childCount(), 2);
+	m_doc->undoStack()->undo();
+	QCOMPARE(m_doc->placements.size(), 1);
+	QCOMPARE(m_doc->wires.size(), 1);
+}
+
+void TestToolsIntegration::selectionSummaryCountsBackWire() {
+	QVERIFY(showBackView());
+	addWire("wb", WireLayer::BackBare, {QPoint(20, 100), QPoint(100, 100)});
+	m_toolManager->activateSelectTool();
+	QSignalSpy summary(m_toolManager.get(), &ToolManager::selectionSummaryChanged);
+
+	QTest::mouseClick(m_backView->viewport(), Qt::LeftButton, Qt::NoModifier, backViewPosFor(QPoint(60, 100)));
+	QCOMPARE(summary.last().first().toString(), QString("選択: 配線1"));
+
+	// 何もない場所をクリックすると選択が外れ、要約も消える。
+	QTest::mouseClick(m_backView->viewport(), Qt::LeftButton, Qt::NoModifier, backViewPosFor(QPoint(200, 200)));
+	QCOMPARE(summary.last().first().toString(), QString());
+}
+
+void TestToolsIntegration::objectListHighlightsBackWireSelectedInBackScene() {
+	MainWindow window;
+	auto *toolManager = window.findChild<ToolManager *>();
+	auto *panel = window.findChild<ObjectListPanel *>();
+	auto *tree = panel ? panel->findChild<QTreeWidget *>() : nullptr;
+	QVERIFY(toolManager != nullptr && tree != nullptr);
+	ToolContext &ctx = toolManager->context();
+
+	// Undo スタックを経由せず、ドキュメントへ直接足して両シーンと一覧を更新する。
+	auto wire = std::make_shared<Wire>();
+	wire->uuid = "wb";
+	wire->layer = WireLayer::BackBare;
+	wire->points = {QPoint(20, 100), QPoint(100, 100)};
+	ctx.document->wires.append(wire);
+	ctx.syncBothScenesWires();
+	panel->refresh();
+	QVERIFY(ctx.frontScene->wireItemFor("wb") == nullptr);
+	QCOMPARE(tree->selectedItems().size(), 0);
+
+	// 裏面ビューで選択した裏面の配線の行が、一覧でも選択状態になる。
+	ctx.backScene->wireItemFor("wb")->setSelected(true);
+	QCOMPARE(tree->selectedItems().size(), 1);
+	QCOMPARE(tree->selectedItems().first()->data(1, Qt::UserRole + 1).toString(), QString("wb"));
+
+	ctx.backScene->clearSelection();
+	QCOMPARE(tree->selectedItems().size(), 0);
+
+	// 選択したまま削除しても、行は消えて選択も空になる (一覧は、選択中のアイテムが消される
+	// 途中でも更新される)。元に戻すと行だけが戻る。
+	ctx.backScene->wireItemFor("wb")->setSelected(true);
+	ctx.document->wires.clear();
+	ctx.syncBothScenesWires();
+	panel->refresh();
+	QCOMPARE(tree->topLevelItem(1)->childCount(), 0);
+	QCOMPARE(tree->selectedItems().size(), 0);
+	ctx.document->wires.append(wire);
+	ctx.syncBothScenesWires();
+	panel->refresh();
+	QCOMPARE(tree->topLevelItem(1)->childCount(), 1);
+	QCOMPARE(tree->selectedItems().size(), 0);
 }
 
 void TestToolsIntegration::wireToolDrawsPolylineOnClicksAndFinishesOnRightClick() {
