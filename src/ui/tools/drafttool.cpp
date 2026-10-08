@@ -59,6 +59,13 @@ bool DraftTool::mouseRelease(BoardScene *scene, QGraphicsSceneMouseEvent *event)
 	return false;
 }
 
+bool DraftTool::mouseDoubleClick(BoardScene *scene, QGraphicsSceneMouseEvent *event) {
+	// 素早い2回目の押下 (前のストロークを描き終えてすぐ次を描き始めたとき) は、押下ではなく
+	// ダブルクリックとして届く。下書きではダブルクリックに特別な意味は無いので、2回目も普通の
+	// 押下として扱い、新しいストロークを始める。
+	return mousePress(scene, event);
+}
+
 bool DraftTool::cancel() {
 	if (m_currentStroke.isEmpty() && !m_activeScene) {
 		return false;

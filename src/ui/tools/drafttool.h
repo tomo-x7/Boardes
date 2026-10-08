@@ -17,6 +17,7 @@ public:
 	bool mousePress(BoardScene *scene, QGraphicsSceneMouseEvent *event) override;
 	bool mouseMove(BoardScene *scene, QGraphicsSceneMouseEvent *event) override;
 	bool mouseRelease(BoardScene *scene, QGraphicsSceneMouseEvent *event) override;
+	bool mouseDoubleClick(BoardScene *scene, QGraphicsSceneMouseEvent *event) override;
 	bool cancel() override;
 	QString statusHint(const Keymap &keymap) const override;
 

@@ -55,6 +55,7 @@ private slots:
 	void selectToolStillHitsPartAndWireUnderDraftStroke();
 	void draftStrokeIsCommittedWhenReleasedWithDifferentModifiers();
 	void draftStrokeIgnoresMovesWithoutTheButtonHeld();
+	void draftToolStartsStrokeOnFastSecondPress();
 	void draftToolEmitsDraftChangedWhenAStrokeIsCommitted();
 	void clearDraftActionClearsDraftsInBothScenes();
 	void draftsAreClearedWhenTheDocumentIsReplaced();
@@ -618,6 +619,33 @@ void TestToolsIntegration::draftStrokeIgnoresMovesWithoutTheButtonHeld() {
 	// 通常の release で確定でき、その後に新しいストロークも描ける。
 	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 40)));
 	QVERIFY(m_frontScene->overlay()->hasDraft());
+}
+
+void TestToolsIntegration::draftToolStartsStrokeOnFastSecondPress() {
+	m_toolManager->activateDraftTool();
+	auto *vp = m_frontView->viewport();
+
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(30, 30)));
+	dragMoveTo(viewPosFor(QPoint(60, 40)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 40)));
+	QVERIFY(m_frontScene->overlay()->hasDraft());
+	const QRectF firstBounds = m_frontScene->overlay()->boundingRect();
+	QVERIFY(firstBounds.bottom() < 100);
+
+	// 下書きのストロークに使わない修飾キー付きの押下は、ダブルクリックとして届いても、
+	// 普通の押下と同じく無視する。
+	QTest::mouseDClick(vp, Qt::LeftButton, Qt::ShiftModifier, viewPosFor(QPoint(30, 200)));
+	dragMoveTo(viewPosFor(QPoint(90, 230)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::ShiftModifier, viewPosFor(QPoint(90, 230)));
+	QCOMPARE(m_frontScene->overlay()->boundingRect(), firstBounds);
+
+	// 描き終えてすぐの2回目の押下は、押下ではなくダブルクリックとして届く。それでも2本目の
+	// ストロークとして描ける (捨てられない)。
+	QTest::mouseDClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(30, 200)));
+	dragMoveTo(viewPosFor(QPoint(90, 230)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(90, 230)));
+	const QRectF bounds = m_frontScene->overlay()->boundingRect();
+	QVERIFY(bounds.contains(QPointF(30, 30)) && bounds.contains(QPointF(90, 230)));
 }
 
 void TestToolsIntegration::draftToolEmitsDraftChangedWhenAStrokeIsCommitted() {
