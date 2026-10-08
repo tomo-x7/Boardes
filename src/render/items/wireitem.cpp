@@ -7,6 +7,8 @@ WireItem::WireItem(std::shared_ptr<const Wire> wire, QGraphicsItem *parent)
 	: QGraphicsItem(parent), m_wire(std::move(wire)) {
 	recomputeBounds();
 	setFlag(QGraphicsItem::ItemIsSelectable, true);
+	// 後から置かれた部品 (z が大きい) の下に隠れないよう、常に部品より上に描く。
+	setZValue(zorder::Wire);
 	// 実際の表示可否は「レイヤ表示トグル」と「オブジェクト一覧の目玉トグル (wire->visible)」
 	// の両方の AND で決まる。両方を知っているのは BoardScene 側なので、初期状態も
 	// BoardScene::syncWires() が setVisible() で明示的に設定する (ここでは決めない)。

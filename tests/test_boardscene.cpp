@@ -1,10 +1,12 @@
 #include <QImage>
 #include <QTest>
+#include <limits>
 
 #include "model/document.h"
 #include "model/librarymanager.h"
 #include "render/boardscene.h"
 #include "render/items/labelitem.h"
+#include "render/items/overlayitem.h"
 #include "render/items/placementitem.h"
 #include "render/items/wireitem.h"
 
@@ -23,6 +25,7 @@ private slots:
 	void placementItemInheritsMirrorOnBackScene();
 	void labelItemCancelsMirrorOnBackScene();
 	void wiresAreRoutedToTheCorrectSideScene();
+	void wiresAreDrawnAbovePlacementsAndBelowOverlay();
 	void removingPlacementRemovesItsRenderItem();
 	void backViewModeThroughHasIdentityTransform();
 	void backViewModeMirrorYFlipsVertically();
@@ -138,6 +141,46 @@ void TestBoardScene::wiresAreRoutedToTheCorrectSideScene() {
 
 	QVERIFY(frontScene.wireItemFor("w3") != nullptr);   // outline -> 両面
 	QVERIFY(backScene.wireItemFor("w3") != nullptr);
+}
+
+void TestBoardScene::wiresAreDrawnAbovePlacementsAndBelowOverlay() {
+	auto doc = makeTestDocument();
+	// 部品の z は Document::nextZValue() で 0,1,2,... と増えていく (後に置いたものが上)。
+	// 2番目以降の部品や、極端に大きい z の部品の上を通る配線が、部品の下に隠れてはいけない。
+	for (int i = 0; i < 3; ++i) {
+		auto placement = std::make_shared<Placement>();
+		placement->uuid = QString("q%1").arg(i);
+		placement->libraryId = "lib";
+		placement->partId = "part1";
+		placement->pos = QPoint(20 + i * 30, 50);
+		placement->z = (i == 2) ? std::numeric_limits<int>::max() : i + 1;
+		doc->placements.append(placement);
+	}
+	auto crossing = std::make_shared<Wire>();
+	crossing->uuid = "wc";
+	crossing->layer = WireLayer::FrontBare;
+	crossing->points = {QPoint(0, 60), QPoint(100, 60)};
+	doc->wires.append(crossing);
+
+	BoardScene scene(Side::Front);
+	// ライブラリを渡さないので、部品は解決できず 20x20 のプレースホルダ枠になる。
+	scene.setDocument(doc.get(), nullptr);
+	auto *wire = scene.wireItemFor("wc");
+	QVERIFY(wire != nullptr);
+
+	// 3つの部品 (x=20..40, 50..70, 80..100) の真上、配線上の点は常に配線が最前面。
+	for (int x : {30, 60, 90}) {
+		QGraphicsItem *hit = scene.itemAt(QPointF(x, 60), QTransform());
+		QVERIFY2(hit == wire, qPrintable(QString("x=%1 で配線以外が最前面").arg(x)));
+	}
+	// 配線から外れた部品の上は、これまでどおり部品が最前面 (配線がクリックを奪うのは線の上だけ)。
+	QVERIFY(dynamic_cast<PlacementItem *>(scene.itemAt(QPointF(60, 52), QTransform())) != nullptr);
+
+	// 入力中のプレビュー等 (OverlayItem) は配線よりさらに上。
+	for (auto *placementItem : scene.allPlacementItems()) {
+		QVERIFY(wire->zValue() > placementItem->zValue());
+	}
+	QVERIFY(scene.overlay()->zValue() > wire->zValue());
 }
 
 void TestBoardScene::removingPlacementRemovesItsRenderItem() {

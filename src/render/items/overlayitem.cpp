@@ -5,7 +5,8 @@
 #include "wireitem.h"
 
 OverlayItem::OverlayItem(QGraphicsItem *parent) : QGraphicsItem(parent) {
-	setZValue(1000);  // 常に最前面
+	// 常に最前面 (配線よりさらに上)
+	setZValue(zorder::Overlay);
 }
 
 QRectF OverlayItem::boundingRect() const {
