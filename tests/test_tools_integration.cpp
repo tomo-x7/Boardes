@@ -37,6 +37,7 @@ private slots:
 	void wireToolDrawsPolylineOnClicksAndFinishesOnRightClick();
 	void wireToolEscDiscardsInProgressWire();
 	void wireToolIgnoresClickOnSameVertexAgain();
+	void wireToolCountsSecondFastClickAsVertex();
 	void wireToolOverlayBoundsCoverConfirmedPointsAndCursor();
 	void wireToolHidesRubberSegmentWhenMouseLeavesView();
 	void selectToolStillHitsPartAndWireUnderDraftStroke();
@@ -275,6 +276,27 @@ void TestToolsIntegration::wireToolIgnoresClickOnSameVertexAgain() {
 	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
 	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
 	QTest::mouseClick(m_frontView->viewport(), Qt::RightButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+
+	QCOMPARE(m_doc->wires.size(), 1);
+	QCOMPARE(m_doc->wires[0]->points.size(), 2);
+	QCOMPARE(m_doc->wires[0]->points[0], QPoint(20, 20));
+	QCOMPARE(m_doc->wires[0]->points[1], QPoint(60, 20));
+}
+
+void TestToolsIntegration::wireToolCountsSecondFastClickAsVertex() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+	auto *vp = m_frontView->viewport();
+
+	// 素早い2回目のクリック (ダブルクリック間隔・距離の内) は、押下ではなく
+	// MouseButtonDblClick として届く。それも頂点として数えなければ、隣の格子点を
+	// 続けて素早くクリックしたときに頂点が抜けてしまう。
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
+	QTest::mouseDClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	// 同じ頂点への素早い再クリックは、これまでどおり長さ0の区間を作らない。
+	QTest::mouseDClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QTest::mouseClick(vp, Qt::RightButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
 
 	QCOMPARE(m_doc->wires.size(), 1);
 	QCOMPARE(m_doc->wires[0]->points.size(), 2);
