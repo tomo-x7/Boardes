@@ -1,5 +1,6 @@
 #include <QFile>
 #include <QFileInfo>
+#include <QGraphicsSceneHoverEvent>
 #include <QImage>
 #include <QPainter>
 #include <QTemporaryDir>
@@ -8,8 +9,10 @@
 
 #include "io/imageexport.h"
 #include "model/document.h"
+#include "model/librarymanager.h"
 #include "render/boardscene.h"
 #include "render/items/overlayitem.h"
+#include "render/items/placementitem.h"
 #include "render/items/wireitem.h"
 
 class TestImageExport : public QObject {
@@ -27,6 +30,7 @@ private slots:
 	void overlayIsNotWrittenToSvg();
 	void overlayIsShownAgainAfterExport();
 	void netHighlightIsNotDrawnInExport();
+	void hoverFrameIsNotDrawnInExport();
 	void svgFileIsCreatedForEachTarget();
 
 private:
@@ -276,9 +280,10 @@ void TestImageExport::netHighlightIsNotDrawnInExport() {
 	QVERIFY(countPixelsDifferentFrom(plain[0], Qt::transparent) > 0);  // 前提: 配線は写っている
 
 	// 前提: 強調が付いたシーンをそのまま描くと、縁取りが写って見た目が変わる。
+	const QImage directPlain = renderDirectly(*m_front);
 	m_front->wireItemFor("wf")->setNetHighlighted(true);
 	m_back->wireItemFor("wb")->setNetHighlighted(true);
-	QVERIFY(renderDirectly(*m_front) != plain[0]);
+	QVERIFY(renderDirectly(*m_front) != directPlain);
 
 	// 強調が付いていても、書き出した画像・SVG は付いていないときと同じ。
 	const auto [highlighted, highlightedSaved] = exportAll(QStringLiteral("highlighted.svg"));
@@ -295,6 +300,119 @@ void TestImageExport::netHighlightIsNotDrawnInExport() {
 	QVERIFY(m_front->wireItemFor("wf")->isNetHighlighted());
 	QVERIFY(m_back->wireItemFor("wb")->isNetHighlighted());
 	QVERIFY(!m_front->wireItemFor("wn")->isNetHighlighted());
+}
+
+void TestImageExport::hoverFrameIsNotDrawnInExport() {
+	// ホバーの枠は、部品が解決できないと描かれない。部品を1つだけ持つライブラリを用意する。
+	QTemporaryDir appData;
+	QVERIFY(appData.isValid());
+	// 実ユーザー環境を汚さない。
+	qputenv("XDG_DATA_HOME", appData.path().toUtf8());
+	LibraryManager libMgr;
+	libMgr.loadAll();
+	Library lib;
+	lib.id = QStringLiteral("hoverlib");
+	lib.name = lib.id;
+	lib.license.kind = LicenseKind::CC0_1_0;
+	auto part = std::make_shared<Part>();
+	part->id = QStringLiteral("P1");
+	part->name = part->id;
+	part->outline = QRect(QPoint(0, 0), QSize(10, 10));
+	QImage artwork(10, 10, QImage::Format_RGB888);
+	artwork.fill(Qt::gray);
+	part->artwork = Artwork::fromImageAsIs(artwork);
+	lib.parts.insert(part->id, part);
+	lib.partCategory.insert(part->id, QStringLiteral("misc"));
+	const auto installed = libMgr.installLibrary(lib);
+	QVERIFY2(installed.ok, qPrintable(installed.error));
+
+	// 基板も背景も何も塗らない状態にして、その上に部品を1つ置く。
+	m_doc->board.size = QSize(40, 40);
+	QImage background(40, 40, QImage::Format_ARGB32);
+	background.fill(Qt::transparent);
+	m_doc->board.backgroundFront = Artwork::fromImageAsIs(background);
+	m_doc->board.backgroundBack = m_doc->board.backgroundFront;
+	auto placement = std::make_shared<Placement>();
+	placement->uuid = QStringLiteral("p1");
+	placement->libraryId = lib.id;
+	placement->partId = part->id;
+	placement->pos = QPoint(15, 15);
+	m_doc->placements.append(placement);
+	m_front->setDocument(m_doc.get(), &libMgr);
+	m_back->setDocument(m_doc.get(), &libMgr);
+	PlacementItem *frontItem = m_front->placementItemFor(QStringLiteral("p1"));
+	PlacementItem *backItem = m_back->placementItemFor(QStringLiteral("p1"));
+	QVERIFY(frontItem != nullptr && backItem != nullptr);
+
+	// マウスが部品に乗った / 離れたことを、本物のホバーイベントで伝える。
+	const auto hover = [&](QEvent::Type type) {
+		QGraphicsSceneHoverEvent frontEvent(type);
+		QGraphicsSceneHoverEvent backEvent(type);
+		QVERIFY(m_front->sendEvent(frontItem, &frontEvent));
+		QVERIFY(m_back->sendEvent(backItem, &backEvent));
+	};
+	QTemporaryDir dir;
+	QVERIFY(dir.isValid());
+	const auto exportAll = [&](const QString &svgName) {
+		QList<QImage> images;
+		imageexport::Options options;
+		options.transparentBackground = true;
+		for (auto target : {imageexport::Target::Front, imageexport::Target::Back, imageexport::Target::Both}) {
+			options.target = target;
+			images.append(imageexport::render(m_front.get(), m_back.get(), options));
+		}
+		options.target = imageexport::Target::Both;
+		const bool saved = imageexport::saveAsSvg(m_front.get(), m_back.get(), options, dir.filePath(svgName));
+		return std::make_pair(images, saved);
+	};
+
+	// マウスが乗っていないときの書き出しと、画面そのままの描画を基準にする。
+	const auto [plain, plainSaved] = exportAll(QStringLiteral("plain.svg"));
+	QVERIFY(plainSaved);
+	QVERIFY(countPixelsDifferentFrom(plain[0], Qt::transparent) > 0);  // 前提: 部品は写っている
+	const QImage directPlain = renderDirectly(*m_front);
+
+	// 前提: マウスが乗っている部品をそのまま描くと、枠が写って見た目が変わる。
+	hover(QEvent::GraphicsSceneHoverEnter);
+	const QImage directHovered = renderDirectly(*m_front);
+	QVERIFY(directHovered != directPlain);
+
+	// マウスが乗っていても、書き出した画像・SVG は乗っていないときと同じ。
+	const auto [hovered, hoveredSaved] = exportAll(QStringLiteral("hovered.svg"));
+	QVERIFY(hoveredSaved);
+	for (int i = 0; i < plain.size(); ++i) {
+		QVERIFY2(hovered[i] == plain[i], qPrintable(QString("target %1 にホバーの枠が写っている").arg(i)));
+	}
+	const QByteArray hoveredSvg = readFile(dir.filePath(QStringLiteral("hovered.svg")));
+	QVERIFY(!hoveredSvg.isEmpty());
+	QCOMPARE(hoveredSvg, readFile(dir.filePath(QStringLiteral("plain.svg"))));
+
+	// 書き出しが終わったら、マウスがまだ乗っている部品には枠がまた出る。
+	QVERIFY(!frontItem->isHoverFrameSuppressed() && !backItem->isHoverFrameSuppressed());
+	QVERIFY(renderDirectly(*m_front) == directHovered);
+
+	// 本物のホバーイベントには逆らわない。書き出しのあとにマウスが離れれば枠は消え、また乗れば出る。
+	hover(QEvent::GraphicsSceneHoverLeave);
+	QVERIFY(renderDirectly(*m_front) == directPlain);
+	hover(QEvent::GraphicsSceneHoverEnter);
+	QVERIFY(renderDirectly(*m_front) == directHovered);
+
+	// 枠を止めている間 (書き出し中を想定) にホバーが変わっても、ホバーの状態そのものは変わらず、
+	// 止めるのをやめた時点で、最後のホバーイベントのとおりになる。
+	frontItem->setHoverFrameSuppressed(true);
+	QVERIFY(renderDirectly(*m_front) == directPlain);
+	hover(QEvent::GraphicsSceneHoverLeave);
+	hover(QEvent::GraphicsSceneHoverEnter);
+	frontItem->setHoverFrameSuppressed(false);
+	QVERIFY(renderDirectly(*m_front) == directHovered);
+	frontItem->setHoverFrameSuppressed(true);
+	hover(QEvent::GraphicsSceneHoverLeave);
+	frontItem->setHoverFrameSuppressed(false);
+	QVERIFY(renderDirectly(*m_front) == directPlain);
+
+	// ライブラリはこの関数の中だけで生きているので、シーンから外しておく。
+	m_front->setDocument(m_doc.get(), nullptr);
+	m_back->setDocument(m_doc.get(), nullptr);
 }
 
 QTEST_MAIN(TestImageExport)

@@ -37,6 +37,11 @@ public:
 	// 裏面ビューの反転モードに応じて、文字 (ピン番号) の向きを補正するための軸。
 	// BoardScene::textFlipX()/textFlipY() をそのまま渡す。
 	void setTextFlip(bool flipX, bool flipY);
+	// ホバー (マウスが乗っている) ことを示す枠を、一時的に描かないようにする。画像の書き出し中など、
+	// 画面だけの表示を写したくないときに使う。ホバーの状態 (hoverEnter/Leave で決まる) 自体は変えない
+	// ので、解除すれば、マウスがまだ乗っている部品には枠がまた出る。
+	void setHoverFrameSuppressed(bool suppressed);
+	bool isHoverFrameSuppressed() const { return m_hoverFrameSuppressed; }
 	// 接点 (ピン) の位置マーカー。PasS 部品は赤いマーカー画素をそのまま残しているので、
 	// これを ON にすると同じ位置にさらに丸が重なる (独自部品でも表示できる)。
 	void setPinMarkers(bool visible, QColor color, qreal diameterUnits);
@@ -54,6 +59,7 @@ private:
 	bool m_textFlipX = false;
 	bool m_textFlipY = false;
 	bool m_hovered = false;
+	bool m_hoverFrameSuppressed = false;
 	bool m_pinMarkersVisible = false;
 	QColor m_pinMarkerColor{255, 0, 0};
 	qreal m_pinMarkerDiameter = 3.0;

@@ -8,6 +8,7 @@
 
 #include "../render/boardscene.h"
 #include "../render/items/overlayitem.h"
+#include "../render/items/placementitem.h"
 #include "../render/items/wireitem.h"
 
 namespace imageexport {
@@ -81,6 +82,31 @@ struct NetHighlightGuard {
 	QList<WireItem *> cleared;
 };
 
+// エクスポート中だけ、部品のホバー (マウスが乗っている) ことを示す枠を描かないようにし、終了後に元へ戻す。
+// マウスの位置に応じて一時的に出る表示で、設計データではないため、書き出し画像には写さない。ホバーの状態
+// 自体は変えず、枠を描くかどうかだけを切り替えるので、終了後にマウスがまだ乗っている部品には枠がまた出る。
+struct HoverFrameGuard {
+	explicit HoverFrameGuard(BoardScene *scene) {
+		if (!scene) {
+			return;
+		}
+		for (PlacementItem *item : scene->allPlacementItems()) {
+			if (!item->isHoverFrameSuppressed()) {
+				item->setHoverFrameSuppressed(true);
+				suppressed.append(item);
+			}
+		}
+	}
+	~HoverFrameGuard() {
+		for (PlacementItem *item : std::as_const(suppressed)) {
+			item->setHoverFrameSuppressed(false);
+		}
+	}
+
+	// 枠を止めた部品 (終了後に戻すもの)。
+	QList<PlacementItem *> suppressed;
+};
+
 }  // namespace
 
 QImage renderToImage(BoardScene *scene, const Options &options) {
@@ -90,6 +116,7 @@ QImage renderToImage(BoardScene *scene, const Options &options) {
 	SelectionGuard guard(scene);
 	OverlayGuard overlayGuard(scene);
 	NetHighlightGuard netHighlightGuard(scene);
+	HoverFrameGuard hoverFrameGuard(scene);
 
 	// sceneRect() はパン用の余白を含む (BoardScene::syncBoard() 参照) ので、書き出しには
 	// 余白なしの基板外形 (boardRect()) を使う。
@@ -204,6 +231,9 @@ bool saveAsSvg(BoardScene *front, BoardScene *back, const Options &options, cons
 		std::unique_ptr<NetHighlightGuard> frontNetGuard, backNetGuard;
 		if (needFront) frontNetGuard = std::make_unique<NetHighlightGuard>(front);
 		if (needBack) backNetGuard = std::make_unique<NetHighlightGuard>(back);
+		std::unique_ptr<HoverFrameGuard> frontHoverGuard, backHoverGuard;
+		if (needFront) frontHoverGuard = std::make_unique<HoverFrameGuard>(front);
+		if (needBack) backHoverGuard = std::make_unique<HoverFrameGuard>(back);
 
 		if (needFront) {
 			front->render(&painter, QRectF(QPointF(0, 0), frontRect.size()), frontRect);
