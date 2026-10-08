@@ -1,4 +1,5 @@
 #include <QImage>
+#include <QPainter>
 #include <QTest>
 #include <limits>
 
@@ -27,6 +28,7 @@ private slots:
 	void wiresAreRoutedToTheCorrectSideScene();
 	void wiresAreDrawnAbovePlacementsAndBelowOverlay();
 	void removingPlacementRemovesItsRenderItem();
+	void draftStrokeHasUniformOpacityAlongTheLine();
 	void backViewModeThroughHasIdentityTransform();
 	void backViewModeMirrorYFlipsVertically();
 	void boardRectExcludesPanningMargin();
@@ -192,6 +194,44 @@ void TestBoardScene::removingPlacementRemovesItsRenderItem() {
 	doc->placements.clear();
 	scene.syncPlacements();
 	QVERIFY(scene.placementItemFor("p1") == nullptr);
+}
+
+void TestBoardScene::draftStrokeHasUniformOpacityAlongTheLine() {
+	// 下書きの線は半透明。区間ごとに drawLine すると継ぎ目で二重に塗られて濃くなり、点々と
+	// 見える。ゆっくり動かしたマウスの軌跡に相当する 1 単位刻みの折れ線で、濃淡が出ないこと
+	// を確認する (確定済みのストロークと、描いている最中のストロークの両方)。
+	QVector<QPointF> points;
+	for (int i = 0; i < 50; ++i) {
+		points.append(QPointF(2 + i, 5));
+	}
+
+	for (const bool live : {false, true}) {
+		OverlayItem overlay;
+		if (live) {
+			overlay.setLiveDraftStroke(points);
+		} else {
+			overlay.addDraftStroke(points);
+		}
+		QImage image(220, 40, QImage::Format_ARGB32_Premultiplied);
+		image.fill(Qt::transparent);
+		QPainter painter(&image);
+		painter.setRenderHint(QPainter::Antialiasing, true);
+		painter.scale(4, 4);
+		overlay.paint(&painter, nullptr, nullptr);
+		painter.end();
+
+		// 線の中心 (y=5 単位 -> 20px) に沿って、両端の丸いキャップを避けて不透明度を調べる。
+		int minAlpha = 255;
+		int maxAlpha = 0;
+		for (int x = 20; x < 190; ++x) {
+			const int alpha = qAlpha(image.pixel(x, 20));
+			minAlpha = qMin(minAlpha, alpha);
+			maxAlpha = qMax(maxAlpha, alpha);
+		}
+		QVERIFY2(minAlpha > 0, "線が描かれていない");
+		const QString spread = QString("不透明度が %1..%2 でばらつく").arg(minAlpha).arg(maxAlpha);
+		QVERIFY2(maxAlpha - minAlpha <= 2, qPrintable(spread));
+	}
 }
 
 void TestBoardScene::backViewModeThroughHasIdentityTransform() {
