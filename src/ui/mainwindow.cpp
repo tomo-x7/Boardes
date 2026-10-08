@@ -49,6 +49,9 @@
 #include "librarymanagerdialog.h"
 #include "toolbarcustomizedialog.h"
 #include "toolbarlayout.h"
+#include "tools/drafttool.h"
+#include "tools/selecttool.h"
+#include "tools/wiretool.h"
 #include "objectlistpanel.h"
 #include "parteditordialog.h"
 #include "partselector.h"
@@ -588,8 +591,38 @@ void MainWindow::setupToolsToolbar() {
 
 	ui->menuView->addAction(toolbar->toggleViewAction());
 
+	connect(m_toolManager.get(), &ToolManager::activeToolChanged, this, &MainWindow::syncToolActionsToActiveTool);
+
 	refreshToolbarIcons();
 	connect(&Theme::instance(), &Theme::changed, this, &MainWindow::refreshToolbarIcons);
+}
+
+void MainWindow::syncToolActionsToActiveTool() {
+	const Tool *tool = m_toolManager->activeTool();
+	QString commandId;
+	if (dynamic_cast<const SelectTool *>(tool)) {
+		commandId = QStringLiteral("toolbar.tools.select");
+	} else if (const auto *wireTool = dynamic_cast<const WireTool *>(tool)) {
+		if (wireTool->kind() == WireKind::Bare) {
+			commandId = QStringLiteral("toolbar.tools.wireBare");
+		} else if (wireTool->kind() == WireKind::Insulated) {
+			commandId = QStringLiteral("toolbar.tools.wireInsulated");
+		} else {
+			commandId = QStringLiteral("toolbar.tools.wireOutline");
+		}
+	} else if (dynamic_cast<const DraftTool *>(tool)) {
+		commandId = QStringLiteral("toolbar.tools.draft");
+	}
+
+	// setChecked() は toggled だけを発行して triggered は発行しない。ボタンの動作 (ツールの
+	// 切り替え) が再び走ることはない。
+	if (QAction *action = commandId.isEmpty() ? nullptr : m_actionRegistry.action(commandId)) {
+		// 排他グループなので、他のボタンは自動で外れる。
+		action->setChecked(true);
+	} else if (QAction *checked = m_toolActionGroup->checkedAction()) {
+		// 部品配置ツールなど、対応するボタンが無いツールのときは、どのボタンも押下状態にしない。
+		checked->setChecked(false);
+	}
 }
 
 // 表示/ツールツールバーの各アクションに線画アイコンを設定する。現在のテーマの

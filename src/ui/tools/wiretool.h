@@ -14,6 +14,9 @@ class WireTool : public Tool {
 public:
 	WireTool(ToolContext *context, WireKind kind);
 
+	// ツールバーのボタン表示を、今アクティブな配線ツールの線種に合わせるために使う。
+	WireKind kind() const { return m_kind; }
+
 	void deactivate() override;
 	bool mousePress(BoardScene *scene, QGraphicsSceneMouseEvent *event) override;
 	bool mouseMove(BoardScene *scene, QGraphicsSceneMouseEvent *event) override;

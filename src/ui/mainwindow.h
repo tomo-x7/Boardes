@@ -117,6 +117,10 @@ private:
 	void setupCentralWidget();
 	void setupViewMenuAndToolbar();
 	void setupToolsToolbar();
+	// ToolManager のアクティブなツールに合わせて、ツールバーのツールボタンの押下表示を更新する。
+	// Esc・右クリックでの解除、ドキュメント切替、部品パレットからの配置ツール切替など、
+	// ボタン以外の操作でツールが変わっても表示が食い違わないようにする。
+	void syncToolActionsToActiveTool();
 	void setupFileMenuConnections();
 	void setupSidePanelDock();
 	// m_zoomBarStrip の左右スペーサ幅を、部品セレクタ/右ドックの現在幅に合わせ直す

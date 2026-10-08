@@ -11,6 +11,8 @@
 #include "render/items/overlayitem.h"
 #include "render/items/placementitem.h"
 #include "render/items/wireitem.h"
+#include "ui/mainwindow.h"
+#include "ui/tools/drafttool.h"
 #include "ui/tools/placeparttool.h"
 #include "ui/tools/selecttool.h"
 #include "ui/tools/snapengine.h"
@@ -43,6 +45,8 @@ private slots:
 	void rotateShortcutRotatesSelection();
 	void hoveringWireHighlightsWholeNetButNotOtherNets();
 	void escapeReturnsPlacePartToolToSelectTool();
+	void escapeAfterWireCommitChecksSelectToolButton();
+	void toolbarButtonsFollowTheActiveTool();
 	void backSceneCoordinatesAreNotMirrored();
 
 private:
@@ -433,6 +437,95 @@ void TestToolsIntegration::escapeReturnsPlacePartToolToSelectTool() {
 
 	m_toolManager->cancelCurrent();
 	QVERIFY(dynamic_cast<SelectTool *>(m_toolManager->activeTool()) != nullptr);
+}
+
+void TestToolsIntegration::escapeAfterWireCommitChecksSelectToolButton() {
+	MainWindow window;
+	window.resize(1200, 800);
+	window.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&window));
+	window.activateWindow();
+	QVERIFY(QTest::qWaitForWindowActive(&window));
+	// 起動直後に遅延実行される全体表示 (fitViewsDeferred) を済ませてからクリック位置を求める。
+	QTest::qWait(10);
+
+	auto *toolManager = window.findChild<ToolManager *>();
+	QVERIFY(toolManager != nullptr);
+	QAction *selectButton = window.actionRegistry().action("toolbar.tools.select");
+	QAction *wireButton = window.actionRegistry().action("toolbar.tools.wireBare");
+	QVERIFY(selectButton != nullptr && wireButton != nullptr);
+
+	wireButton->trigger();
+	QVERIFY(wireButton->isChecked());
+
+	// 配線を1本引いて確定する。確定後も配線ツールのまま。
+	BoardScene *scene = toolManager->context().frontScene;
+	auto *view = qobject_cast<BoardView *>(scene->views().value(0));
+	QVERIFY(view != nullptr);
+	const QPoint from = view->mapFromScene(scene->fromModel(view->viewCenterModel()));
+	const QPoint to = from + QPoint(40, 0);
+	QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, from);
+	QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, to);
+	QTest::mouseClick(view->viewport(), Qt::RightButton, Qt::NoModifier, to);
+	QCOMPARE(toolManager->context().document->wires.size(), 1);
+	QVERIFY(dynamic_cast<WireTool *>(toolManager->activeTool()) != nullptr);
+	QVERIFY(wireButton->isChecked());
+
+	// 作図中のものが無い状態で Esc を押すと選択ツールに戻る。ツールバーの押下表示も
+	// 「配線」のままではなく「選択」に変わらなければならない。
+	QTest::keyClick(&window, Qt::Key_Escape);
+	QVERIFY(dynamic_cast<SelectTool *>(toolManager->activeTool()) != nullptr);
+	QVERIFY(selectButton->isChecked());
+	QVERIFY(!wireButton->isChecked());
+}
+
+void TestToolsIntegration::toolbarButtonsFollowTheActiveTool() {
+	MainWindow window;
+	auto *toolManager = window.findChild<ToolManager *>();
+	QVERIFY(toolManager != nullptr);
+
+	const QStringList buttonIds = {"toolbar.tools.select", "toolbar.tools.wireBare", "toolbar.tools.wireInsulated",
+								   "toolbar.tools.wireOutline", "toolbar.tools.draft"};
+	auto checkedButtons = [&] {
+		QStringList checked;
+		for (const QString &id : buttonIds) {
+			if (window.actionRegistry().action(id)->isChecked()) {
+				checked << id;
+			}
+		}
+		return checked;
+	};
+
+	// ボタン以外 (ToolManager を直接操作 = Esc・右クリック・部品パレット等と同じ経路) で
+	// ツールが変わっても、対応するボタンだけが押下状態になる。
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.select"});
+	toolManager->activateWireTool(WireKind::Insulated);
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.wireInsulated"});
+	toolManager->activateWireTool(WireKind::Outline);
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.wireOutline"});
+	toolManager->activateWireTool(WireKind::Bare);
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.wireBare"});
+	toolManager->activateDraftTool();
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.draft"});
+	// 部品配置ツールに対応するボタンは無いので、どれも押下状態にならない。
+	toolManager->activatePlacePartTool("lib", "part");
+	QCOMPARE(checkedButtons(), QStringList{});
+	toolManager->activateSelectTool();
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.select"});
+
+	// ボタンを押したときの動作は従来どおり。押したボタンのツールに切り替わり、そのボタンが
+	// 押下状態になる。すでに押下状態のボタンをもう一度押しても、そのままそのツールが有効。
+	window.actionRegistry().action("toolbar.tools.draft")->trigger();
+	QVERIFY(dynamic_cast<DraftTool *>(toolManager->activeTool()) != nullptr);
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.draft"});
+	window.actionRegistry().action("toolbar.tools.wireOutline")->trigger();
+	auto *wireTool = dynamic_cast<WireTool *>(toolManager->activeTool());
+	QVERIFY(wireTool != nullptr);
+	QCOMPARE(static_cast<int>(wireTool->kind()), static_cast<int>(WireKind::Outline));
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.wireOutline"});
+	window.actionRegistry().action("toolbar.tools.wireOutline")->trigger();
+	QVERIFY(dynamic_cast<WireTool *>(toolManager->activeTool()) != nullptr);
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.wireOutline"});
 }
 
 void TestToolsIntegration::backSceneCoordinatesAreNotMirrored() {
