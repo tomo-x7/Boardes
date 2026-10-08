@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "../render/boardscene.h"
+#include "../render/items/overlayitem.h"
 
 namespace imageexport {
 
@@ -35,6 +36,26 @@ private:
 	QList<QGraphicsItem *> m_previouslySelected;
 };
 
+// エクスポート中だけオーバーレイを隠し、終了後に元へ戻す。オーバーレイは下書きの線・入力中の
+// 配線のプレビュー・部品配置のゴーストといった、ツールが一時的に描く表示専用のもので、設計データ
+// ではないため、書き出し画像には写さない。
+struct OverlayGuard {
+	explicit OverlayGuard(BoardScene *scene) {
+		if (scene && scene->overlay()->isVisible()) {
+			hidden = scene->overlay();
+			hidden->hide();
+		}
+	}
+	~OverlayGuard() {
+		if (hidden) {
+			hidden->show();
+		}
+	}
+
+	// 隠した場合だけ設定する (元から隠れていたら、そのままにして、戻すこともしない)。
+	OverlayItem *hidden = nullptr;
+};
+
 }  // namespace
 
 QImage renderToImage(BoardScene *scene, const Options &options) {
@@ -42,6 +63,7 @@ QImage renderToImage(BoardScene *scene, const Options &options) {
 		return {};
 	}
 	SelectionGuard guard(scene);
+	OverlayGuard overlayGuard(scene);
 
 	// sceneRect() はパン用の余白を含む (BoardScene::syncBoard() 参照) ので、書き出しには
 	// 余白なしの基板外形 (boardRect()) を使う。
@@ -150,6 +172,9 @@ bool saveAsSvg(BoardScene *front, BoardScene *back, const Options &options, cons
 		std::unique_ptr<SelectionGuard> frontGuard, backGuard;
 		if (needFront) frontGuard = std::make_unique<SelectionGuard>(front);
 		if (needBack) backGuard = std::make_unique<SelectionGuard>(back);
+		std::unique_ptr<OverlayGuard> frontOverlayGuard, backOverlayGuard;
+		if (needFront) frontOverlayGuard = std::make_unique<OverlayGuard>(front);
+		if (needBack) backOverlayGuard = std::make_unique<OverlayGuard>(back);
 
 		if (needFront) {
 			front->render(&painter, QRectF(QPointF(0, 0), frontRect.size()), frontRect);
