@@ -1,9 +1,11 @@
 #include <QImage>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QScrollBar>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QToolBar>
 #include <QTreeWidget>
 
 #include "core/units.h"
@@ -52,6 +54,10 @@ private slots:
 	void selectToolStillHitsPartAndWireUnderDraftStroke();
 	void draftStrokeIsCommittedWhenReleasedWithDifferentModifiers();
 	void draftStrokeIgnoresMovesWithoutTheButtonHeld();
+	void draftToolEmitsDraftChangedWhenAStrokeIsCommitted();
+	void clearDraftActionClearsDraftsInBothScenes();
+	void draftsAreClearedWhenTheDocumentIsReplaced();
+	void clearDraftActionIsInEditMenuButNotInDefaultToolbars();
 	void spaceHeldLeftDragPansInsteadOfDrawingWire();
 	void spaceHeldDoubleClickAlsoPansInsteadOfDrawingWire();
 	void spaceHeldIsClearedWhenViewLosesFocus();
@@ -593,6 +599,95 @@ void TestToolsIntegration::draftStrokeIgnoresMovesWithoutTheButtonHeld() {
 	// 通常の release で確定でき、その後に新しいストロークも描ける。
 	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 40)));
 	QVERIFY(m_frontScene->overlay()->hasDraft());
+}
+
+void TestToolsIntegration::draftToolEmitsDraftChangedWhenAStrokeIsCommitted() {
+	m_toolManager->activateDraftTool();
+	auto *vp = m_frontView->viewport();
+	QSignalSpy spy(m_frontScene.get(), &BoardScene::draftChanged);
+
+	// 描いている最中は下書きとして数えず、ボタンを離して確定したときに1回だけ知らせる。
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(30, 30)));
+	dragMoveTo(viewPosFor(QPoint(60, 40)));
+	dragMoveTo(viewPosFor(QPoint(90, 50)));
+	QCOMPARE(spy.count(), 0);
+	QVERIFY(!m_frontScene->hasDraft());
+
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(90, 50)));
+	QCOMPARE(spy.count(), 1);
+	QVERIFY(m_frontScene->hasDraft());
+}
+
+void TestToolsIntegration::clearDraftActionClearsDraftsInBothScenes() {
+	MainWindow window;
+	auto *toolManager = window.findChild<ToolManager *>();
+	QAction *clearDraft = window.actionRegistry().action("toolbar.tools.clearDraft");
+	QVERIFY(toolManager != nullptr && clearDraft != nullptr);
+	ToolContext &ctx = toolManager->context();
+	QCOMPARE(clearDraft->text(), QString("下書きを消去"));
+
+	// 下書きが無いときは押せない。表面か裏面のどちらかに下書きができると押せるようになる。
+	QVERIFY(!clearDraft->isEnabled());
+	ctx.backScene->overlay()->addDraftStroke({QPointF(10, 10), QPointF(50, 50)});
+	QVERIFY(clearDraft->isEnabled());
+	ctx.frontScene->overlay()->addDraftStroke({QPointF(20, 20), QPointF(60, 60)});
+	QVERIFY(clearDraft->isEnabled());
+
+	// 表裏どちらの下書きも消え、押せない状態に戻る。下書きは設計データではないので、描いても
+	// 消しても Undo スタックには何も積まれない (消した下書きは元に戻せない)。
+	clearDraft->trigger();
+	QVERIFY(!ctx.frontScene->hasDraft());
+	QVERIFY(!ctx.backScene->hasDraft());
+	QVERIFY(!clearDraft->isEnabled());
+	QVERIFY(!ctx.document->undoStack()->canUndo());
+	QVERIFY(ctx.document->undoStack()->isClean());
+
+	// 片面の下書きだけでも押せる。
+	ctx.backScene->overlay()->addDraftStroke({QPointF(10, 10), QPointF(50, 50)});
+	QVERIFY(clearDraft->isEnabled());
+	clearDraft->trigger();
+	QVERIFY(!ctx.backScene->hasDraft());
+	QVERIFY(!clearDraft->isEnabled());
+}
+
+void TestToolsIntegration::draftsAreClearedWhenTheDocumentIsReplaced() {
+	MainWindow window;
+	auto *toolManager = window.findChild<ToolManager *>();
+	QAction *clearDraft = window.actionRegistry().action("toolbar.tools.clearDraft");
+	auto *newAction = window.findChild<QAction *>("newAction");
+	QVERIFY(toolManager != nullptr && clearDraft != nullptr && newAction != nullptr);
+	ToolContext &ctx = toolManager->context();
+
+	ctx.frontScene->overlay()->addDraftStroke({QPointF(20, 20), QPointF(60, 60)});
+	ctx.backScene->overlay()->addDraftStroke({QPointF(10, 10), QPointF(50, 50)});
+	QVERIFY(clearDraft->isEnabled());
+
+	// ファイル→新規作成で設計データが入れ替わると、下書きも消える (開くも同じ setDocument を通る)。
+	newAction->trigger();
+	QVERIFY(!ctx.frontScene->hasDraft());
+	QVERIFY(!ctx.backScene->hasDraft());
+	QVERIFY(!clearDraft->isEnabled());
+}
+
+void TestToolsIntegration::clearDraftActionIsInEditMenuButNotInDefaultToolbars() {
+	MainWindow window;
+	QAction *clearDraft = window.actionRegistry().action("toolbar.tools.clearDraft");
+	auto *newAction = window.findChild<QAction *>("newAction");
+	auto *editMenu = window.findChild<QMenu *>("menuEdit");
+	QVERIFY(clearDraft != nullptr && newAction != nullptr && editMenu != nullptr);
+
+	// ツールバーのカスタマイズで選べるよう登録されている。
+	QVERIFY(window.actionRegistry().commandIds().contains("toolbar.tools.clearDraft"));
+	// 編集メニューにあり、設計データを入れ替えて編集メニューが作り直されても残る。
+	QVERIFY(editMenu->actions().contains(clearDraft));
+	newAction->trigger();
+	QVERIFY(editMenu->actions().contains(clearDraft));
+	// 既定のツールバーには置かない。
+	for (const char *name : {"viewToolBar", "toolsToolBar"}) {
+		auto *toolbar = window.findChild<QToolBar *>(name);
+		QVERIFY(toolbar != nullptr);
+		QVERIFY(!toolbar->actions().contains(clearDraft));
+	}
 }
 
 void TestToolsIntegration::spaceHeldLeftDragPansInsteadOfDrawingWire() {

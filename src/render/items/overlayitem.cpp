@@ -85,6 +85,9 @@ void OverlayItem::addDraftStroke(const QVector<QPointF> &points) {
 	m_draftStrokes.append(points);
 	recomputeBounds();
 	update();
+	if (m_draftChanged) {
+		m_draftChanged();
+	}
 }
 
 void OverlayItem::clearDraft() {
@@ -95,6 +98,9 @@ void OverlayItem::clearDraft() {
 	m_draftStrokes.clear();
 	recomputeBounds();
 	update();
+	if (m_draftChanged) {
+		m_draftChanged();
+	}
 }
 
 void OverlayItem::setLiveDraftStroke(const QVector<QPointF> &points) {

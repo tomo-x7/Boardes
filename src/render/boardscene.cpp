@@ -32,6 +32,7 @@ BoardScene::BoardScene(Side side, QObject *parent) : QGraphicsScene(parent), m_s
 	m_root = new SceneRootItem();
 	addItem(m_root);
 	m_overlay = new OverlayItem(m_root);
+	m_overlay->setDraftChangedCallback([this] { emit draftChanged(); });
 }
 
 BoardScene::~BoardScene() = default;
@@ -49,6 +50,8 @@ void BoardScene::clearAllItems() {
 
 void BoardScene::setDocument(Document *document, LibraryManager *libraryManager) {
 	clearAllItems();
+	// 下書きは、いま開いている設計データの上に描いた走り書き。別の設計データへ引き継がない。
+	clearDraft();
 	m_document = document;
 	m_libraryManager = libraryManager;
 	syncBoard();
@@ -69,6 +72,10 @@ QTransform backRootTransform(BackViewMode mode, QSize boardSize) {
 	}
 }
 }  // namespace
+
+bool BoardScene::hasDraft() const { return m_overlay->hasDraft(); }
+
+void BoardScene::clearDraft() { m_overlay->clearDraft(); }
 
 void BoardScene::syncBoard() {
 	const BoardSpec *board = m_document ? &m_document->board : nullptr;

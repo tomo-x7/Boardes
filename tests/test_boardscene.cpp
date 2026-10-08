@@ -1,5 +1,6 @@
 #include <QImage>
 #include <QPainter>
+#include <QSignalSpy>
 #include <QTest>
 #include <limits>
 
@@ -29,6 +30,8 @@ private slots:
 	void wiresAreDrawnAbovePlacementsAndBelowOverlay();
 	void removingPlacementRemovesItsRenderItem();
 	void draftStrokeHasUniformOpacityAlongTheLine();
+	void draftChangedSignalFollowsConfirmedDraftStrokes();
+	void settingANewDocumentClearsDrafts();
 	void backViewModeThroughHasIdentityTransform();
 	void backViewModeMirrorYFlipsVertically();
 	void boardRectExcludesPanningMargin();
@@ -232,6 +235,46 @@ void TestBoardScene::draftStrokeHasUniformOpacityAlongTheLine() {
 		const QString spread = QString("不透明度が %1..%2 でばらつく").arg(minAlpha).arg(maxAlpha);
 		QVERIFY2(maxAlpha - minAlpha <= 2, qPrintable(spread));
 	}
+}
+
+void TestBoardScene::draftChangedSignalFollowsConfirmedDraftStrokes() {
+	auto doc = makeTestDocument();
+	BoardScene scene(Side::Front);
+	scene.setDocument(doc.get(), nullptr);
+	QSignalSpy spy(&scene, &BoardScene::draftChanged);
+	QVERIFY(!scene.hasDraft());
+
+	scene.overlay()->addDraftStroke({QPointF(1, 1), QPointF(20, 20)});
+	QVERIFY(scene.hasDraft());
+	QCOMPARE(spy.count(), 1);
+
+	// 描いている最中のストロークは、確定するまで下書きとして数えない。
+	scene.overlay()->setLiveDraftStroke({QPointF(5, 5), QPointF(9, 9)});
+	QCOMPARE(spy.count(), 1);
+
+	scene.clearDraft();
+	QVERIFY(!scene.hasDraft());
+	QCOMPARE(spy.count(), 2);
+
+	// 消すものが無いときは何も起きない。
+	scene.clearDraft();
+	QCOMPARE(spy.count(), 2);
+}
+
+void TestBoardScene::settingANewDocumentClearsDrafts() {
+	auto doc = makeTestDocument();
+	BoardScene scene(Side::Front);
+	scene.setDocument(doc.get(), nullptr);
+	scene.overlay()->addDraftStroke({QPointF(1, 1), QPointF(20, 20)});
+	QVERIFY(scene.hasDraft());
+	QVERIFY(!scene.overlay()->boundingRect().isEmpty());
+
+	// 下書きは設計データではなく、いま開いている設計データの上の走り書き。別の設計データを
+	// 設定すると、引き継がれずに消える。
+	auto other = makeTestDocument();
+	scene.setDocument(other.get(), nullptr);
+	QVERIFY(!scene.hasDraft());
+	QVERIFY(scene.overlay()->boundingRect().isEmpty());
 }
 
 void TestBoardScene::backViewModeThroughHasIdentityTransform() {

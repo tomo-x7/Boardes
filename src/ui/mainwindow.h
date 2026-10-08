@@ -27,6 +27,7 @@ class StatsPanel;
 class ObjectListPanel;
 struct DrcFinding;
 class QSplitter;
+class QAction;
 class QActionGroup;
 class QMenu;
 class QDockWidget;
@@ -73,6 +74,7 @@ private slots:
 	void onExportClipboardTriggered();
 
 	void onDrcFindingActivated(const DrcFinding &finding);
+	void onClearDraftTriggered();
 	void onEscapeTriggered();
 
 private:
@@ -92,6 +94,8 @@ private:
 	PartSelector *m_partSelector;
 	QSplitter *m_viewsSplitter;
 	QActionGroup *m_toolActionGroup = nullptr;
+	// 編集メニューの「下書きを消去」。下書きがあるときだけ有効。
+	QAction *m_clearDraftAction = nullptr;
 	QMenu *m_recentFilesMenu = nullptr;
 	DrcPanel *m_drcPanel = nullptr;
 	StatsPanel *m_statsPanel = nullptr;
@@ -117,6 +121,8 @@ private:
 	void setupCentralWidget();
 	void setupViewMenuAndToolbar();
 	void setupToolsToolbar();
+	void setupClearDraftAction();
+	void updateClearDraftActionEnabled();
 	// ToolManager のアクティブなツールに合わせて、ツールバーのツールボタンの押下表示を更新する。
 	// Esc・右クリックでの解除、ドキュメント切替、部品パレットからの配置ツール切替など、
 	// ボタン以外の操作でツールが変わっても表示が食い違わないようにする。
