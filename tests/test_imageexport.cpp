@@ -4,11 +4,13 @@
 #include <QPainter>
 #include <QTemporaryDir>
 #include <QTest>
+#include <tuple>
 
 #include "io/imageexport.h"
 #include "model/document.h"
 #include "render/boardscene.h"
 #include "render/items/overlayitem.h"
+#include "render/items/wireitem.h"
 
 class TestImageExport : public QObject {
 	Q_OBJECT
@@ -24,6 +26,7 @@ private slots:
 	void overlayIsNotDrawnInPng();
 	void overlayIsNotWrittenToSvg();
 	void overlayIsShownAgainAfterExport();
+	void netHighlightIsNotDrawnInExport();
 	void svgFileIsCreatedForEachTarget();
 
 private:
@@ -108,6 +111,16 @@ int countPixelsDifferentFrom(const QImage &img, QColor color) {
 QByteArray readFile(const QString &path) {
 	QFile file(path);
 	return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+}
+
+// エクスポートを通さず、シーンの基板全体をそのまま描く。
+QImage renderDirectly(BoardScene &scene) {
+	QImage img(scene.boardRect().size().toSize(), QImage::Format_ARGB32_Premultiplied);
+	img.fill(Qt::transparent);
+	QPainter painter(&img);
+	scene.render(&painter, QRectF(QPointF(0, 0), QSizeF(img.size())), scene.boardRect());
+	painter.end();
+	return img;
 }
 }  // namespace
 
@@ -220,6 +233,68 @@ void TestImageExport::overlayIsShownAgainAfterExport() {
 	QVERIFY(imageexport::saveAsSvg(m_front.get(), m_back.get(), options, dir.filePath(QStringLiteral("out2.svg"))));
 	QVERIFY(!m_front->overlay()->isVisible());
 	QVERIFY(m_back->overlay()->isVisible());
+}
+
+void TestImageExport::netHighlightIsNotDrawnInExport() {
+	// 基板も背景も何も塗らない状態にして、配線だけを載せる。wf (表) と wb (裏) はこのあと同一ネットの
+	// 強調を付け、wn (表) は付けない。
+	useFullyTransparentBoard(*m_doc);
+	m_doc->board.backgroundBack = m_doc->board.backgroundFront;
+	const QVector<std::tuple<QString, WireLayer, int>> wires = {
+		{QStringLiteral("wf"), WireLayer::FrontBare, 3},
+		{QStringLiteral("wn"), WireLayer::FrontBare, 7},
+		{QStringLiteral("wb"), WireLayer::BackBare, 5},
+	};
+	for (const auto &[uuid, layer, y] : wires) {
+		auto wire = std::make_shared<Wire>();
+		wire->uuid = uuid;
+		wire->layer = layer;
+		wire->points = {QPoint(1, y), QPoint(9, y)};
+		m_doc->wires.append(wire);
+	}
+	m_front->syncBoard();
+	m_back->syncBoard();
+	m_front->syncWires();
+	m_back->syncWires();
+
+	QTemporaryDir dir;
+	QVERIFY(dir.isValid());
+	const auto exportAll = [&](const QString &svgName) {
+		QList<QImage> images;
+		imageexport::Options options;
+		options.transparentBackground = true;
+		for (auto target : {imageexport::Target::Front, imageexport::Target::Back, imageexport::Target::Both}) {
+			options.target = target;
+			images.append(imageexport::render(m_front.get(), m_back.get(), options));
+		}
+		options.target = imageexport::Target::Both;
+		const bool saved = imageexport::saveAsSvg(m_front.get(), m_back.get(), options, dir.filePath(svgName));
+		return std::make_pair(images, saved);
+	};
+	const auto [plain, plainSaved] = exportAll(QStringLiteral("plain.svg"));
+	QVERIFY(plainSaved);
+	QVERIFY(countPixelsDifferentFrom(plain[0], Qt::transparent) > 0);  // 前提: 配線は写っている
+
+	// 前提: 強調が付いたシーンをそのまま描くと、縁取りが写って見た目が変わる。
+	m_front->wireItemFor("wf")->setNetHighlighted(true);
+	m_back->wireItemFor("wb")->setNetHighlighted(true);
+	QVERIFY(renderDirectly(*m_front) != plain[0]);
+
+	// 強調が付いていても、書き出した画像・SVG は付いていないときと同じ。
+	const auto [highlighted, highlightedSaved] = exportAll(QStringLiteral("highlighted.svg"));
+	QVERIFY(highlightedSaved);
+	for (int i = 0; i < plain.size(); ++i) {
+		QVERIFY2(highlighted[i] == plain[i], qPrintable(QString("target %1 に強調が写っている").arg(i)));
+	}
+	const QByteArray svg = readFile(dir.filePath(QStringLiteral("highlighted.svg")));
+	QVERIFY(!svg.isEmpty());
+	QVERIFY2(!svg.contains("#00dcdc"), "強調の縁取りの色が書き出されている");
+	QCOMPARE(svg, readFile(dir.filePath(QStringLiteral("plain.svg"))));
+
+	// 書き出しが終わったら、強調していた配線だけが元どおり強調に戻る (付いていなかった配線には付けない)。
+	QVERIFY(m_front->wireItemFor("wf")->isNetHighlighted());
+	QVERIFY(m_back->wireItemFor("wb")->isNetHighlighted());
+	QVERIFY(!m_front->wireItemFor("wn")->isNetHighlighted());
 }
 
 QTEST_MAIN(TestImageExport)
