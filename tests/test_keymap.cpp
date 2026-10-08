@@ -1,4 +1,5 @@
 #include <QCoreApplication>
+#include <QKeyEvent>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -22,6 +23,7 @@ private slots:
 	void loadIgnoresIndividuallyBrokenStoredGestures();
 	void conflictsDetectSameCategoryDuplicateAssignment();
 	void conflictsIgnoreDifferentCategoriesWithoutGlobal();
+	void matchesKeyTreatsKeypadKeysLikeTheMainKeys();
 	void displayForJoinsMultipleGesturesWithOr();
 	void changedSignalFiresOnMutation();
 
@@ -168,6 +170,23 @@ void TestKeymap::conflictsIgnoreDifferentCategoriesWithoutGlobal() {
 			(c.commandIdB == QStringLiteral("select.flip") && c.commandIdA == QStringLiteral("place.rotate"));
 		QVERIFY(!involvesFlipAndRotate);  // select と place は無関係のカテゴリなので衝突扱いしない
 	}
+}
+
+void TestKeymap::matchesKeyTreatsKeypadKeysLikeTheMainKeys() {
+	// 設定は読み込まず、既定の割り当てだけで調べる。
+	Keymap keymap;
+
+	// テンキーの Enter は Key_Enter + KeypadModifier で届く。wire.commit の既定 (Return / Enter) に一致する。
+	QKeyEvent keypadEnter(QEvent::KeyPress, Qt::Key_Enter, Qt::KeypadModifier);
+	QVERIFY(keymap.matchesKey(QStringLiteral("wire.commit"), &keypadEnter));
+	QKeyEvent mainReturn(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+	QVERIFY(keymap.matchesKey(QStringLiteral("wire.commit"), &mainReturn));
+	// テンキーの矢印 (NumLock オフ) も、通常の矢印キーと同じ操作になる。
+	QKeyEvent keypadLeft(QEvent::KeyPress, Qt::Key_Left, Qt::KeypadModifier);
+	QVERIFY(keymap.matchesKey(QStringLiteral("select.moveLeft"), &keypadLeft));
+	// Shift など、ほかの修飾キーが付けば別の操作。
+	QKeyEvent shiftedKeypadEnter(QEvent::KeyPress, Qt::Key_Enter, Qt::KeypadModifier | Qt::ShiftModifier);
+	QVERIFY(!keymap.matchesKey(QStringLiteral("wire.commit"), &shiftedKeypadEnter));
 }
 
 void TestKeymap::displayForJoinsMultipleGesturesWithOr() {

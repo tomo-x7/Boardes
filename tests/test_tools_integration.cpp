@@ -46,6 +46,7 @@ private slots:
 	void selectionSummaryCountsBackWire();
 	void objectListHighlightsBackWireSelectedInBackScene();
 	void wireToolDrawsPolylineOnClicksAndFinishesOnRightClick();
+	void wireToolCommitsOnEnterAndKeypadEnter();
 	void wireToolEscDiscardsInProgressWire();
 	void wireToolIgnoresClickOnSameVertexAgain();
 	void wireToolCountsSecondFastClickAsVertex();
@@ -434,6 +435,24 @@ void TestToolsIntegration::wireToolDrawsPolylineOnClicksAndFinishesOnRightClick(
 	QCOMPARE(m_doc->wires[0]->points.size(), 3);
 	QCOMPARE(static_cast<int>(m_doc->wires[0]->layer), static_cast<int>(WireLayer::FrontBare));
 	QVERIFY(m_frontScene->wireItemFor(m_doc->wires[0]->uuid) != nullptr);
+}
+
+void TestToolsIntegration::wireToolCommitsOnEnterAndKeypadEnter() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+	auto *vp = m_frontView->viewport();
+
+	// メインキーボードの Enter (Return) で確定する。
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QTest::keyClick(vp, Qt::Key_Return);
+	QCOMPARE(m_doc->wires.size(), 1);
+
+	// テンキーの Enter は Key_Enter + KeypadModifier として届く。これでも確定できる。
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 60)));
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 60)));
+	QTest::keyClick(vp, Qt::Key_Enter, Qt::KeypadModifier);
+	QCOMPARE(m_doc->wires.size(), 2);
+	QCOMPARE(m_doc->wires[1]->points.size(), 2);
 }
 
 void TestToolsIntegration::wireToolEscDiscardsInProgressWire() {
