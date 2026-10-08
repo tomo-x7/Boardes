@@ -1,4 +1,5 @@
 #include <QImage>
+#include <QMouseEvent>
 #include <QScrollBar>
 #include <QTemporaryDir>
 #include <QTest>
@@ -38,6 +39,7 @@ private slots:
 	void wireToolIgnoresClickOnSameVertexAgain();
 	void wireToolOverlayBoundsCoverConfirmedPointsAndCursor();
 	void wireToolHidesRubberSegmentWhenMouseLeavesView();
+	void selectToolStillHitsPartAndWireUnderDraftStroke();
 	void spaceHeldLeftDragPansInsteadOfDrawingWire();
 	void spaceHeldDoubleClickAlsoPansInsteadOfDrawingWire();
 	void spaceHeldIsClearedWhenViewLosesFocus();
@@ -63,6 +65,7 @@ private:
 
 	QPoint viewPosFor(QPoint sceneUnitPos) const;
 	QPoint scrollPosition() const;
+	void dragMoveTo(QPoint viewPos, Qt::MouseButton heldButton = Qt::LeftButton);
 };
 
 void TestToolsIntegration::init() {
@@ -153,6 +156,15 @@ QPoint TestToolsIntegration::viewPosFor(QPoint sceneUnitPos) const {
 
 QPoint TestToolsIntegration::scrollPosition() const {
 	return QPoint(m_frontView->horizontalScrollBar()->value(), m_frontView->verticalScrollBar()->value());
+}
+
+// ボタンを押したままのマウス移動を送る。QTest::mouseMove() はボタンを押していない移動に
+// なるので、ドラッグ中の移動はこちらで送る。
+void TestToolsIntegration::dragMoveTo(QPoint viewPos, Qt::MouseButton heldButton) {
+	QWidget *viewport = m_frontView->viewport();
+	QMouseEvent move(QEvent::MouseMove, QPointF(viewPos), QPointF(viewport->mapToGlobal(viewPos)), Qt::NoButton,
+					 heldButton, Qt::NoModifier);
+	QApplication::sendEvent(viewport, &move);
 }
 
 void TestToolsIntegration::placePartToolAddsPlacementOnClick() {
@@ -301,6 +313,49 @@ void TestToolsIntegration::wireToolHidesRubberSegmentWhenMouseLeavesView() {
 	QVERIFY(m_frontScene->overlay()->boundingRect().bottom() < 30);
 
 	m_toolManager->cancelCurrent();
+}
+
+void TestToolsIntegration::selectToolStillHitsPartAndWireUnderDraftStroke() {
+	auto placement = std::make_shared<Placement>();
+	placement->uuid = "p1";
+	placement->libraryId = m_libId;
+	placement->partId = m_partId;
+	placement->pos = QPoint(50, 50);
+	m_doc->placements.append(placement);
+	auto wire = std::make_shared<Wire>();
+	wire->uuid = "w1";
+	wire->layer = WireLayer::FrontBare;
+	wire->points = {QPoint(20, 100), QPoint(100, 100)};
+	m_doc->wires.append(wire);
+	m_frontScene->syncPlacements();
+	m_frontScene->syncWires();
+
+	// 下書きで、部品と配線の両方を囲む矩形ができるストロークを描く。
+	auto *vp = m_frontView->viewport();
+	m_toolManager->activateDraftTool();
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(30, 30)));
+	dragMoveTo(viewPosFor(QPoint(80, 80)));
+	dragMoveTo(viewPosFor(QPoint(130, 130)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(130, 130)));
+	QVERIFY(m_frontScene->overlay()->hasDraft());
+	const QRectF bounds = m_frontScene->overlay()->boundingRect();
+	QVERIFY(bounds.contains(QPointF(55, 55)) && bounds.contains(QPointF(60, 100)));
+
+	// 選択ツールに戻すと、その矩形の中でも、部品と配線をこれまでどおりクリックで選択でき、
+	// ヒットテスト (itemAt) にも最前面のオーバーレイではなく部品・配線が返る。
+	m_toolManager->activateSelectTool();
+	QVERIFY(dynamic_cast<PlacementItem *>(m_frontScene->itemAt(QPointF(55, 55), QTransform())) != nullptr);
+	QVERIFY(dynamic_cast<WireItem *>(m_frontScene->itemAt(QPointF(60, 100), QTransform())) != nullptr);
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 100)));
+	QVERIFY(m_frontScene->wireItemFor("w1")->isSelected());
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(55, 55)));
+	QVERIFY(m_frontScene->placementItemFor("p1")->isSelected());
+
+	// ドラッグで部品を移動することもできる。
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(55, 55)));
+	dragMoveTo(viewPosFor(QPoint(85, 85)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(85, 85)));
+	QCOMPARE(m_doc->placements[0]->pos, QPoint(80, 80));
 }
 
 void TestToolsIntegration::spaceHeldLeftDragPansInsteadOfDrawingWire() {

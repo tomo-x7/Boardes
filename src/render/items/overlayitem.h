@@ -16,6 +16,8 @@ public:
 	explicit OverlayItem(QGraphicsItem *parent = nullptr);
 
 	QRectF boundingRect() const override;
+	// 空の形状を返し、ヒットテストには一切参加しない。
+	QPainterPath shape() const override;
 	void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
 	// 入力中の配線: 確定済みの点列 + 現在のカーソル位置。

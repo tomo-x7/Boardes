@@ -13,6 +13,14 @@ QRectF OverlayItem::boundingRect() const {
 	return m_bounds;
 }
 
+QPainterPath OverlayItem::shape() const {
+	// オーバーレイは見た目だけの描画面で、クリックや選択の対象ではない。既定の shape() は
+	// boundingRect() 全体で、しかもこのアイテムは最前面にある。そのままだと、下書きの線や
+	// プレビューを囲む矩形の中にある部品・配線が、SelectTool の itemAt() によるヒット
+	// テストで隠れて、クリック・ドラッグ・右クリックメニューが効かなくなる。
+	return QPainterPath();
+}
+
 namespace {
 // QRectF::operator| は片方が isNull() (幅0 かつ 高さ0) だと、結合せずもう片方を
 // そのまま返してしまう。点だけを集めて外接矩形を求めたいときにこれを使うと
