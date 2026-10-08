@@ -160,6 +160,13 @@ void MainWindow::checkLibraryLoadIssues() {
 }
 
 MainWindow::~MainWindow() {
+	// ObjectListPanel は m_toolManager が持つ ToolContext を指している。m_toolManager はメンバなので、
+	// 子オブジェクト (パネル・シーン) より先に、m_document よりも先に破棄される。切り離さずにおくと、
+	// 破棄される Document の Undo スタックが発行する indexChanged や、シーンが選択中のアイテムを
+	// 片付けるときの selectionChanged で、パネルが解放済みの ToolContext を読んでしまう。
+	if (m_objectListPanel) {
+		m_objectListPanel->setContext(nullptr);
+	}
 	delete ui;
 }
 

@@ -8,6 +8,7 @@
 #include <QToolBar>
 #include <QTreeWidget>
 
+#include "commands/wirecommands.h"
 #include "core/units.h"
 #include "io/partio.h"
 #include "model/document.h"
@@ -69,6 +70,7 @@ private slots:
 	void escapeReturnsPlacePartToolToSelectTool();
 	void escapeAfterWireCommitChecksSelectToolButton();
 	void toolbarButtonsFollowTheActiveTool();
+	void objectListIsDetachedBeforeToolContextIsDestroyed();
 	void backSceneCoordinatesAreNotMirrored();
 
 private:
@@ -960,6 +962,33 @@ void TestToolsIntegration::toolbarButtonsFollowTheActiveTool() {
 	window.actionRegistry().action("toolbar.tools.wireOutline")->trigger();
 	QVERIFY(dynamic_cast<WireTool *>(toolManager->activeTool()) != nullptr);
 	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.wireOutline"});
+}
+
+void TestToolsIntegration::objectListIsDetachedBeforeToolContextIsDestroyed() {
+	auto window = std::make_unique<MainWindow>();
+	auto *toolManager = window->findChild<ToolManager *>();
+	auto *panel = window->findChild<ObjectListPanel *>();
+	auto *tree = panel ? panel->findChild<QTreeWidget *>() : nullptr;
+	QVERIFY(toolManager != nullptr && tree != nullptr);
+	ToolContext &ctx = toolManager->context();
+
+	// 破棄されるとき、Undo スタックに履歴があり、アイテムが選択されたままの状態にする。
+	auto wire = std::make_shared<Wire>();
+	wire->uuid = "w1";
+	wire->layer = WireLayer::FrontBare;
+	wire->points = {QPoint(20, 20), QPoint(80, 20)};
+	ctx.document->undoStack()->push(new AddWireCommand(&ctx, wire));
+	ctx.frontScene->wireItemFor("w1")->setSelected(true);
+	QVERIFY(tree->topLevelItemCount() > 0);
+
+	// 一覧は ToolContext を指している。ToolManager (ToolContext の持ち主) が破棄される時点で、一覧は
+	// もう切り離されて空になっていなければならない。切り離す前に破棄されると、そのあと破棄される
+	// Document の Undo スタックの通知や、シーンが選択中のアイテムを片付けるときの通知で、一覧が
+	// 解放済みの ToolContext を読んでしまう (ASAN で検出される)。
+	int rowsWhenToolManagerDied = -1;
+	connect(toolManager, &QObject::destroyed, this, [&] { rowsWhenToolManagerDied = tree->topLevelItemCount(); });
+	window.reset();
+	QCOMPARE(rowsWhenToolManagerDied, 0);
 }
 
 void TestToolsIntegration::backSceneCoordinatesAreNotMirrored() {
