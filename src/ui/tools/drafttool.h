@@ -22,5 +22,7 @@ public:
 
 private:
 	BoardScene *m_activeScene = nullptr;
+	// 今のストロークを始めたボタン。離したときは修飾キーの状態に関わらずこのボタンで確定する。
+	Qt::MouseButton m_strokeButton = Qt::NoButton;
 	QVector<QPointF> m_currentStroke;
 };

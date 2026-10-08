@@ -41,6 +41,8 @@ private slots:
 	void wireToolOverlayBoundsCoverConfirmedPointsAndCursor();
 	void wireToolHidesRubberSegmentWhenMouseLeavesView();
 	void selectToolStillHitsPartAndWireUnderDraftStroke();
+	void draftStrokeIsCommittedWhenReleasedWithDifferentModifiers();
+	void draftStrokeIgnoresMovesWithoutTheButtonHeld();
 	void spaceHeldLeftDragPansInsteadOfDrawingWire();
 	void spaceHeldDoubleClickAlsoPansInsteadOfDrawingWire();
 	void spaceHeldIsClearedWhenViewLosesFocus();
@@ -378,6 +380,42 @@ void TestToolsIntegration::selectToolStillHitsPartAndWireUnderDraftStroke() {
 	dragMoveTo(viewPosFor(QPoint(85, 85)));
 	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(85, 85)));
 	QCOMPARE(m_doc->placements[0]->pos, QPoint(80, 80));
+}
+
+void TestToolsIntegration::draftStrokeIsCommittedWhenReleasedWithDifferentModifiers() {
+	m_toolManager->activateDraftTool();
+	auto *vp = m_frontView->viewport();
+
+	// ストロークの途中で Shift を押し、押したままボタンを離す。離した時点の修飾キーが
+	// 押下時と違っていても、ボタンを離せばストロークは確定する。
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(30, 30)));
+	dragMoveTo(viewPosFor(QPoint(60, 40)));
+	dragMoveTo(viewPosFor(QPoint(90, 50)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::ShiftModifier, viewPosFor(QPoint(90, 50)));
+	QVERIFY(m_frontScene->overlay()->hasDraft());
+
+	// 確定後は、ボタンを押さないカーソル移動でストロークが伸びたり動いたりしない。
+	const QRectF committedBounds = m_frontScene->overlay()->boundingRect();
+	dragMoveTo(viewPosFor(QPoint(250, 250)), Qt::NoButton);
+	QCOMPARE(m_frontScene->overlay()->boundingRect(), committedBounds);
+}
+
+void TestToolsIntegration::draftStrokeIgnoresMovesWithoutTheButtonHeld() {
+	m_toolManager->activateDraftTool();
+	auto *vp = m_frontView->viewport();
+
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(30, 30)));
+	dragMoveTo(viewPosFor(QPoint(60, 40)));
+	const QRectF boundsWhileDragging = m_frontScene->overlay()->boundingRect();
+
+	// ボタンを離したのに release が届かなかった場合 (別ウィンドウの上で離した等)、
+	// ボタンを押さないカーソル移動でストロークが伸び続けてはいけない。
+	dragMoveTo(viewPosFor(QPoint(200, 200)), Qt::NoButton);
+	QCOMPARE(m_frontScene->overlay()->boundingRect(), boundsWhileDragging);
+
+	// 通常の release で確定でき、その後に新しいストロークも描ける。
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 40)));
+	QVERIFY(m_frontScene->overlay()->hasDraft());
 }
 
 void TestToolsIntegration::spaceHeldLeftDragPansInsteadOfDrawingWire() {
