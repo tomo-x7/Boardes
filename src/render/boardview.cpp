@@ -94,20 +94,41 @@ void BoardView::wheelEvent(QWheelEvent *event) {
 	event->accept();
 }
 
-void BoardView::beginPan(const QPoint &pos) {
+bool BoardView::startsPan(const QMouseEvent *event) const {
+	// Space 押下中の左ボタンは、アクティブなツール (配線の頂点追加など) ではなく
+	// ビュー自身のパンに使う。シーンへ渡すと、ツールが押下を消費してパンが始まらない。
+	if (m_spaceHeld && event->button() == Qt::LeftButton) {
+		return true;
+	}
+	return keymapOrDefault().matchesMouseButton(QStringLiteral("view.pan"), event->button(), event->modifiers(),
+												InputKind::MouseDrag);
+}
+
+void BoardView::beginPan(const QPoint &pos, Qt::MouseButton button) {
 	m_panning = true;
+	m_panButton = button;
 	m_lastPanPos = pos;
 	setCursor(Qt::ClosedHandCursor);
 }
 
 void BoardView::mousePressEvent(QMouseEvent *event) {
-	if (keymapOrDefault().matchesMouseButton(QStringLiteral("view.pan"), event->button(), event->modifiers(),
-											 InputKind::MouseDrag)) {
-		beginPan(event->pos());
+	if (startsPan(event)) {
+		beginPan(event->pos(), event->button());
 		event->accept();
 		return;
 	}
 	QGraphicsView::mousePressEvent(event);
+}
+
+void BoardView::mouseDoubleClickEvent(QMouseEvent *event) {
+	// 素早い2回目の押下はダブルクリックとして届く。パン用のボタンならパンとして扱い、
+	// ツールのダブルクリック処理 (押下扱いで頂点を追加する等) へ渡さない。
+	if (startsPan(event)) {
+		beginPan(event->pos(), event->button());
+		event->accept();
+		return;
+	}
+	QGraphicsView::mouseDoubleClickEvent(event);
 }
 
 void BoardView::mouseMoveEvent(QMouseEvent *event) {
@@ -123,9 +144,11 @@ void BoardView::mouseMoveEvent(QMouseEvent *event) {
 }
 
 void BoardView::mouseReleaseEvent(QMouseEvent *event) {
-	if (m_panning && keymapOrDefault().matchesMouseButton(QStringLiteral("view.pan"), event->button(),
-														   event->modifiers(), InputKind::MouseDrag)) {
+	// パンを始めたボタンを離したら終わり。修飾キーまで照合し直すと、パン中に Ctrl 等が
+	// 押されただけで終了できなくなり、ボタンを押さない移動でもスクロールし続けてしまう。
+	if (m_panning && event->button() == m_panButton) {
 		m_panning = false;
+		m_panButton = Qt::NoButton;
 		setCursor(m_spaceHeld ? Qt::OpenHandCursor : Qt::ArrowCursor);
 		event->accept();
 		return;
@@ -163,6 +186,16 @@ void BoardView::keyReleaseEvent(QKeyEvent *event) {
 void BoardView::focusInEvent(QFocusEvent *event) {
 	QGraphicsView::focusInEvent(event);
 	emit focusReceived(this);
+}
+
+void BoardView::focusOutEvent(QFocusEvent *event) {
+	// Space を押したままフォーカスが移ると keyRelease が届かず、Space 押下中の扱いが残ってしまう。
+	// 残ったままだと以後の左クリックがすべてパンになりツールが使えなくなるので、ここで解除する。
+	if (m_spaceHeld) {
+		m_spaceHeld = false;
+		setDragMode(m_dragModeBeforeSpace);
+	}
+	QGraphicsView::focusOutEvent(event);
 }
 
 void BoardView::leaveEvent(QEvent *event) {

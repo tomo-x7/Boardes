@@ -1,4 +1,5 @@
 #include <QImage>
+#include <QScrollBar>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -35,6 +36,10 @@ private slots:
 	void wireToolIgnoresClickOnSameVertexAgain();
 	void wireToolOverlayBoundsCoverConfirmedPointsAndCursor();
 	void wireToolHidesRubberSegmentWhenMouseLeavesView();
+	void spaceHeldLeftDragPansInsteadOfDrawingWire();
+	void spaceHeldDoubleClickAlsoPansInsteadOfDrawingWire();
+	void spaceHeldIsClearedWhenViewLosesFocus();
+	void middleButtonPanEndsEvenIfModifiersChangeBeforeRelease();
 	void rotateShortcutRotatesSelection();
 	void hoveringWireHighlightsWholeNetButNotOtherNets();
 	void escapeReturnsPlacePartToolToSelectTool();
@@ -53,6 +58,7 @@ private:
 	QString m_partId;
 
 	QPoint viewPosFor(QPoint sceneUnitPos) const;
+	QPoint scrollPosition() const;
 };
 
 void TestToolsIntegration::init() {
@@ -139,6 +145,10 @@ void TestToolsIntegration::cleanup() {
 
 QPoint TestToolsIntegration::viewPosFor(QPoint sceneUnitPos) const {
 	return m_frontView->mapFromScene(QPointF(sceneUnitPos));
+}
+
+QPoint TestToolsIntegration::scrollPosition() const {
+	return QPoint(m_frontView->horizontalScrollBar()->value(), m_frontView->verticalScrollBar()->value());
 }
 
 void TestToolsIntegration::placePartToolAddsPlacementOnClick() {
@@ -287,6 +297,85 @@ void TestToolsIntegration::wireToolHidesRubberSegmentWhenMouseLeavesView() {
 	QVERIFY(m_frontScene->overlay()->boundingRect().bottom() < 30);
 
 	m_toolManager->cancelCurrent();
+}
+
+void TestToolsIntegration::spaceHeldLeftDragPansInsteadOfDrawingWire() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+	auto *vp = m_frontView->viewport();
+	m_frontView->centerOn(150, 150);
+	const QPoint scrollBefore = scrollPosition();
+
+	// Space 押下中の左ドラッグはビューのパン。配線ツールには押下が届かず、頂点も
+	// プレビューも作られない (以前は押下をツールが消費してパンが始まらなかった)。
+	QTest::keyPress(vp, Qt::Key_Space);
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, QPoint(300, 300));
+	QTest::mouseMove(vp, QPoint(280, 290));
+	QTest::mouseMove(vp, QPoint(260, 280));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, QPoint(260, 280));
+	QTest::keyRelease(vp, Qt::Key_Space);
+
+	const QPoint scrollAfter = scrollPosition();
+	QVERIFY(scrollAfter != scrollBefore);
+	QVERIFY(m_frontScene->overlay()->boundingRect().isEmpty());
+
+	// Space を離したあとの左クリックは、また頂点になる。
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
+	QVERIFY(!m_frontScene->overlay()->boundingRect().isEmpty());
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QTest::mouseClick(vp, Qt::RightButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QCOMPARE(m_doc->wires.size(), 1);
+	QCOMPARE(m_doc->wires[0]->points.size(), 2);
+}
+
+void TestToolsIntegration::spaceHeldDoubleClickAlsoPansInsteadOfDrawingWire() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+	auto *vp = m_frontView->viewport();
+	m_frontView->centerOn(150, 150);
+	const QPoint scrollBefore = scrollPosition();
+
+	// 素早い2回目の押下はダブルクリックとして届く。それもパンとして扱う。
+	QTest::keyPress(vp, Qt::Key_Space);
+	QTest::mouseDClick(vp, Qt::LeftButton, Qt::NoModifier, QPoint(300, 300));
+	QTest::mouseMove(vp, QPoint(280, 290));
+	QTest::mouseMove(vp, QPoint(260, 280));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, QPoint(260, 280));
+	QTest::keyRelease(vp, Qt::Key_Space);
+
+	const QPoint scrollAfter = scrollPosition();
+	QVERIFY(scrollAfter != scrollBefore);
+	QVERIFY(m_frontScene->overlay()->boundingRect().isEmpty());
+}
+
+void TestToolsIntegration::spaceHeldIsClearedWhenViewLosesFocus() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+	auto *vp = m_frontView->viewport();
+
+	// Space を押したままフォーカスが他へ移ると keyRelease は届かない。Space 押下中の扱いが
+	// 残ったままだと、以後の左クリックがすべてパンになって配線を引けなくなる。
+	QTest::keyPress(vp, Qt::Key_Space);
+	QFocusEvent focusOut(QEvent::FocusOut);
+	QApplication::sendEvent(m_frontView.get(), &focusOut);
+
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
+	QVERIFY(!m_frontScene->overlay()->boundingRect().isEmpty());
+	m_toolManager->cancelCurrent();
+}
+
+void TestToolsIntegration::middleButtonPanEndsEvenIfModifiersChangeBeforeRelease() {
+	auto *vp = m_frontView->viewport();
+	m_frontView->centerOn(150, 150);
+
+	// 中ボタンでパンし、途中で押した Ctrl を保ったままボタンを離す。離した時点の修飾キーが
+	// 押下時と違っても、パンは終わらなければならない。
+	QTest::mousePress(vp, Qt::MiddleButton, Qt::NoModifier, QPoint(300, 300));
+	QTest::mouseMove(vp, QPoint(280, 290));
+	QTest::mouseRelease(vp, Qt::MiddleButton, Qt::ControlModifier, QPoint(280, 290));
+	const QPoint scrollAtRelease = scrollPosition();
+
+	// ボタンを押さない移動でスクロールし続けてはいけない。
+	QTest::mouseMove(vp, QPoint(240, 250));
+	const QPoint scrollAfterMove = scrollPosition();
+	QCOMPARE(scrollAfterMove, scrollAtRelease);
 }
 
 void TestToolsIntegration::rotateShortcutRotatesSelection() {
