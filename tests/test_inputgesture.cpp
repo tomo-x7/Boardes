@@ -1,5 +1,7 @@
+#include <QKeyEvent>
 #include <QTest>
 
+#include "ui/input/gesturecapturedialog.h"
 #include "ui/input/inputgesture.h"
 
 // Phase 18: InputGesture の判定・シリアライズのユニットテスト。
@@ -12,6 +14,8 @@ private slots:
 	void wheelGestureRoundTripsThroughStorageString();
 	void fromStorageStringRejectsMalformedInput();
 	void matchesKeyRequiresExactModifiers();
+	void matchesKeyIgnoresKeypadModifierOnBothSides();
+	void captureDoesNotStoreKeypadModifier();
 	void matchesKeyFallsBackToNativeScanCode();
 	void matchesMouseButtonDistinguishesKind();
 	void invalidGesturesAreRejected();
@@ -69,6 +73,65 @@ void TestInputGesture::matchesKeyRequiresExactModifiers() {
 	QVERIFY(g.matchesKey(Qt::Key_R, 0, Qt::NoModifier));
 	QVERIFY(!g.matchesKey(Qt::Key_R, 0, Qt::ShiftModifier));  // 修飾キーが余分だと一致しない
 	QVERIFY(!g.matchesKey(Qt::Key_F, 0, Qt::NoModifier));     // キー自体が違う
+}
+
+void TestInputGesture::matchesKeyIgnoresKeypadModifierOnBothSides() {
+	// テンキーの Enter は Key_Enter + KeypadModifier として届く。
+	InputGesture enter;
+	enter.kind = InputKind::Key;
+	enter.key = Qt::Key_Enter;
+	enter.mods = Qt::NoModifier;
+	QVERIFY(enter.matchesKey(Qt::Key_Enter, 0, Qt::NoModifier));
+	QVERIFY(enter.matchesKey(Qt::Key_Enter, 0, Qt::KeypadModifier));
+
+	// 以前に記録された、KeypadModifier ごと保存されている割り当ても、どちらにも一致する。
+	InputGesture recorded = enter;
+	recorded.mods = Qt::KeypadModifier;
+	QVERIFY(recorded.matchesKey(Qt::Key_Enter, 0, Qt::NoModifier));
+	QVERIFY(recorded.matchesKey(Qt::Key_Enter, 0, Qt::KeypadModifier));
+
+	// ほかの修飾キーは、KeypadModifier が付いていても厳密に比較する。
+	QVERIFY(!enter.matchesKey(Qt::Key_Enter, 0, Qt::KeypadModifier | Qt::ShiftModifier));
+	QVERIFY(!recorded.matchesKey(Qt::Key_Enter, 0, Qt::ControlModifier));
+	InputGesture ctrlC;
+	ctrlC.kind = InputKind::Key;
+	ctrlC.key = Qt::Key_C;
+	ctrlC.mods = Qt::ControlModifier;
+	QVERIFY(ctrlC.matchesKey(Qt::Key_C, 0, Qt::ControlModifier | Qt::KeypadModifier));
+	QVERIFY(!ctrlC.matchesKey(Qt::Key_C, 0, Qt::KeypadModifier));
+	QVERIFY(!ctrlC.matchesKey(Qt::Key_C, 0, Qt::ControlModifier | Qt::ShiftModifier | Qt::KeypadModifier));
+
+	// キーそのものは今までどおり区別する。ネイティブスキャンコードでの照合も同じ。
+	QVERIFY(!enter.matchesKey(Qt::Key_Return, 0, Qt::KeypadModifier));
+	InputGesture scanCode;
+	scanCode.kind = InputKind::Key;
+	scanCode.nativeScanCode = 191;
+	QVERIFY(scanCode.matchesKey(0, 191, Qt::KeypadModifier));
+	QVERIFY(!scanCode.matchesKey(0, 192, Qt::KeypadModifier));
+}
+
+void TestInputGesture::captureDoesNotStoreKeypadModifier() {
+	// テンキーの Enter を Shift と一緒に押す。Shift は記録するが、KeypadModifier は記録しない。
+	GestureCaptureDialog shifted(InputKind::Key);
+	QKeyEvent shiftedPress(QEvent::KeyPress, Qt::Key_Enter, Qt::KeypadModifier | Qt::ShiftModifier);
+	QApplication::sendEvent(&shifted, &shiftedPress);
+	QVERIFY(shifted.capturedGesture().has_value());
+	QCOMPARE(shifted.capturedGesture()->key, static_cast<int>(Qt::Key_Enter));
+	QCOMPARE(shifted.capturedGesture()->mods, Qt::KeyboardModifiers(Qt::ShiftModifier));
+
+	// テンキーの Enter だけなら、修飾キーなしの Enter として記録される。通常の Enter と区別が
+	// 付かない割り当てになり (保存される値も同じ)、どちらのキーにも一致する。
+	GestureCaptureDialog plain(InputKind::Key);
+	QKeyEvent keypadPress(QEvent::KeyPress, Qt::Key_Enter, Qt::KeypadModifier);
+	QApplication::sendEvent(&plain, &keypadPress);
+	QVERIFY(plain.capturedGesture().has_value());
+	InputGesture mainEnter;
+	mainEnter.kind = InputKind::Key;
+	mainEnter.key = Qt::Key_Enter;
+	QCOMPARE(*plain.capturedGesture(), mainEnter);
+	QCOMPARE(plain.capturedGesture()->toStorageString(), mainEnter.toStorageString());
+	QVERIFY(plain.capturedGesture()->matchesKey(Qt::Key_Enter, 0, Qt::NoModifier));
+	QVERIFY(plain.capturedGesture()->matchesKey(Qt::Key_Enter, 0, Qt::KeypadModifier));
 }
 
 void TestInputGesture::matchesKeyFallsBackToNativeScanCode() {

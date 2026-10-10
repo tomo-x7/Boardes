@@ -5,11 +5,20 @@
 #include "wireitem.h"
 
 OverlayItem::OverlayItem(QGraphicsItem *parent) : QGraphicsItem(parent) {
-	setZValue(1000);  // 常に最前面
+	// 常に最前面 (配線よりさらに上)
+	setZValue(zorder::Overlay);
 }
 
 QRectF OverlayItem::boundingRect() const {
 	return m_bounds;
+}
+
+QPainterPath OverlayItem::shape() const {
+	// オーバーレイは見た目だけの描画面で、クリックや選択の対象ではない。既定の shape() は
+	// boundingRect() 全体で、しかもこのアイテムは最前面にある。そのままだと、下書きの線や
+	// プレビューを囲む矩形の中にある部品・配線が、SelectTool の itemAt() によるヒット
+	// テストで隠れて、クリック・ドラッグ・右クリックメニューが効かなくなる。
+	return QPainterPath();
 }
 
 namespace {
@@ -76,6 +85,9 @@ void OverlayItem::addDraftStroke(const QVector<QPointF> &points) {
 	m_draftStrokes.append(points);
 	recomputeBounds();
 	update();
+	if (m_draftChanged) {
+		m_draftChanged();
+	}
 }
 
 void OverlayItem::clearDraft() {
@@ -86,6 +98,9 @@ void OverlayItem::clearDraft() {
 	m_draftStrokes.clear();
 	recomputeBounds();
 	update();
+	if (m_draftChanged) {
+		m_draftChanged();
+	}
 }
 
 void OverlayItem::setLiveDraftStroke(const QVector<QPointF> &points) {
@@ -158,14 +173,12 @@ void OverlayItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWi
 		pen.setCapStyle(Qt::RoundCap);
 		pen.setJoinStyle(Qt::RoundJoin);
 		painter->setPen(pen);
+		// 1本のストロークは1つの折れ線として描く。区間ごとに drawLine すると、半透明のペンでは
+		// 区間の継ぎ目 (丸いキャップの重なり) が二重に塗られて、点々と濃く見えてしまう。
 		for (const auto &stroke : m_draftStrokes) {
-			for (int i = 1; i < stroke.size(); ++i) {
-				painter->drawLine(stroke[i - 1], stroke[i]);
-			}
+			painter->drawPolyline(stroke.constData(), stroke.size());
 		}
-		for (int i = 1; i < m_liveDraftStroke.size(); ++i) {
-			painter->drawLine(m_liveDraftStroke[i - 1], m_liveDraftStroke[i]);
-		}
+		painter->drawPolyline(m_liveDraftStroke.constData(), m_liveDraftStroke.size());
 	}
 
 	if (m_hasGhost) {

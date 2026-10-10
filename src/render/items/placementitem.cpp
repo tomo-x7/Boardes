@@ -133,7 +133,7 @@ void PlacementItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, Q
 		for (const QPointF &corner : {rect.topLeft(), rect.topRight(), rect.bottomLeft(), rect.bottomRight()}) {
 			painter->drawRect(QRectF(corner.x() - hs / 2, corner.y() - hs / 2, hs, hs));
 		}
-	} else if (m_hovered) {
+	} else if (m_hovered && !m_hoverFrameSuppressed) {
 		painter->setBrush(Qt::NoBrush);
 		painter->setPen(QPen(QColor(0, 200, 255, 160), 1.5 * px));
 		painter->drawRect(rect);
@@ -150,6 +150,16 @@ void PlacementItem::hoverLeaveEvent(QGraphicsSceneHoverEvent *event) {
 	QGraphicsItem::hoverLeaveEvent(event);
 	m_hovered = false;
 	update();
+}
+
+void PlacementItem::setHoverFrameSuppressed(bool suppressed) {
+	if (m_hoverFrameSuppressed == suppressed) {
+		return;
+	}
+	m_hoverFrameSuppressed = suppressed;
+	if (m_hovered) {
+		update();  // 枠が出ているときだけ、見た目が変わる
+	}
 }
 
 void PlacementItem::refresh() {

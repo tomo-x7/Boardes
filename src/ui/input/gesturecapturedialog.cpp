@@ -122,7 +122,7 @@ void GestureCaptureDialog::keyPressEvent(QKeyEvent *event) {
 	g.kind = InputKind::Key;
 	g.key = event->key();
 	g.nativeScanCode = event->nativeScanCode();
-	g.mods = event->modifiers();
+	g.mods = InputGesture::withoutKeypad(event->modifiers());
 	setCaptured(g);
 }
 

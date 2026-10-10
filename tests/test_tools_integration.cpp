@@ -1,7 +1,15 @@
 #include <QImage>
+#include <QMenu>
+#include <QMouseEvent>
+#include <QScrollBar>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QToolBar>
+#include <QTreeWidget>
 
+#include "commands/wirecommands.h"
+#include "core/units.h"
 #include "io/partio.h"
 #include "model/document.h"
 #include "model/librarymanager.h"
@@ -10,6 +18,9 @@
 #include "render/items/overlayitem.h"
 #include "render/items/placementitem.h"
 #include "render/items/wireitem.h"
+#include "ui/mainwindow.h"
+#include "ui/objectlistpanel.h"
+#include "ui/tools/drafttool.h"
 #include "ui/tools/placeparttool.h"
 #include "ui/tools/selecttool.h"
 #include "ui/tools/snapengine.h"
@@ -30,14 +41,36 @@ private slots:
 	void placePartToolAddsPlacementOnClick();
 	void selectToolDragMovesPlacementWithUndo();
 	void selectToolDeleteKeyRemovesSelection();
+	void selectToolDeleteKeyRemovesBackWireWithUndo();
+	void selectToolCopiesAndPastesBackWire();
+	void selectToolProcessesItemsSelectedInBothScenesOnce();
+	void selectionSummaryCountsBackWire();
+	void objectListHighlightsBackWireSelectedInBackScene();
 	void wireToolDrawsPolylineOnClicksAndFinishesOnRightClick();
+	void wireToolCommitsOnEnterAndKeypadEnter();
 	void wireToolEscDiscardsInProgressWire();
 	void wireToolIgnoresClickOnSameVertexAgain();
+	void wireToolCountsSecondFastClickAsVertex();
 	void wireToolOverlayBoundsCoverConfirmedPointsAndCursor();
 	void wireToolHidesRubberSegmentWhenMouseLeavesView();
+	void selectToolStillHitsPartAndWireUnderDraftStroke();
+	void draftStrokeIsCommittedWhenReleasedWithDifferentModifiers();
+	void draftStrokeIgnoresMovesWithoutTheButtonHeld();
+	void draftToolStartsStrokeOnFastSecondPress();
+	void draftToolEmitsDraftChangedWhenAStrokeIsCommitted();
+	void clearDraftActionClearsDraftsInBothScenes();
+	void draftsAreClearedWhenTheDocumentIsReplaced();
+	void clearDraftActionIsInEditMenuButNotInDefaultToolbars();
+	void spaceHeldLeftDragPansInsteadOfDrawingWire();
+	void spaceHeldDoubleClickAlsoPansInsteadOfDrawingWire();
+	void spaceHeldIsClearedWhenViewLosesFocus();
+	void middleButtonPanEndsEvenIfModifiersChangeBeforeRelease();
 	void rotateShortcutRotatesSelection();
 	void hoveringWireHighlightsWholeNetButNotOtherNets();
 	void escapeReturnsPlacePartToolToSelectTool();
+	void escapeAfterWireCommitChecksSelectToolButton();
+	void toolbarButtonsFollowTheActiveTool();
+	void objectListIsDetachedBeforeToolContextIsDestroyed();
 	void backSceneCoordinatesAreNotMirrored();
 
 private:
@@ -47,12 +80,18 @@ private:
 	std::unique_ptr<BoardScene> m_frontScene;
 	std::unique_ptr<BoardScene> m_backScene;
 	std::unique_ptr<BoardView> m_frontView;
+	std::unique_ptr<BoardView> m_backView;
 	std::unique_ptr<ToolManager> m_toolManager;
 
 	QString m_libId;
 	QString m_partId;
 
 	QPoint viewPosFor(QPoint sceneUnitPos) const;
+	QPoint backViewPosFor(QPoint modelPos) const;
+	QPoint scrollPosition() const;
+	bool showBackView();
+	void addWire(const QString &uuid, WireLayer layer, const QVector<QPoint> &points);
+	void dragMoveTo(QPoint viewPos, Qt::MouseButton heldButton = Qt::LeftButton);
 };
 
 void TestToolsIntegration::init() {
@@ -128,6 +167,7 @@ void TestToolsIntegration::init() {
 }
 
 void TestToolsIntegration::cleanup() {
+	m_backView.reset();
 	m_frontView.reset();
 	m_toolManager.reset();
 	m_backScene.reset();
@@ -139,6 +179,48 @@ void TestToolsIntegration::cleanup() {
 
 QPoint TestToolsIntegration::viewPosFor(QPoint sceneUnitPos) const {
 	return m_frontView->mapFromScene(QPointF(sceneUnitPos));
+}
+
+// 裏面ビューの上で、モデル座標 modelPos に見える位置。
+QPoint TestToolsIntegration::backViewPosFor(QPoint modelPos) const {
+	return m_backView->mapFromScene(m_backScene->fromModel(QPointF(modelPos)));
+}
+
+QPoint TestToolsIntegration::scrollPosition() const {
+	return QPoint(m_frontView->horizontalScrollBar()->value(), m_frontView->verticalScrollBar()->value());
+}
+
+// 裏面シーンを表示するビューを作る (表面ビューと同じ設定)。
+bool TestToolsIntegration::showBackView() {
+	m_backView = std::make_unique<BoardView>();
+	m_backView->setScene(m_backScene.get());
+	m_backView->resize(600, 600);
+	m_backView->show();
+	if (!QTest::qWaitForWindowExposed(m_backView.get())) {
+		return false;
+	}
+	m_backView->resetZoom();
+	return true;
+}
+
+// 配線を直接ドキュメントに足して、両シーンへ反映する (Undo スタックには積まない)。
+void TestToolsIntegration::addWire(const QString &uuid, WireLayer layer, const QVector<QPoint> &points) {
+	auto wire = std::make_shared<Wire>();
+	wire->uuid = uuid;
+	wire->layer = layer;
+	wire->points = points;
+	m_doc->wires.append(wire);
+	m_frontScene->syncWires();
+	m_backScene->syncWires();
+}
+
+// ボタンを押したままのマウス移動を送る。QTest::mouseMove() はボタンを押していない移動に
+// なるので、ドラッグ中の移動はこちらで送る。
+void TestToolsIntegration::dragMoveTo(QPoint viewPos, Qt::MouseButton heldButton) {
+	QWidget *viewport = m_frontView->viewport();
+	QMouseEvent move(QEvent::MouseMove, QPointF(viewPos), QPointF(viewport->mapToGlobal(viewPos)), Qt::NoButton,
+					 heldButton, Qt::NoModifier);
+	QApplication::sendEvent(viewport, &move);
 }
 
 void TestToolsIntegration::placePartToolAddsPlacementOnClick() {
@@ -206,6 +288,140 @@ void TestToolsIntegration::selectToolDeleteKeyRemovesSelection() {
 	QCOMPARE(m_doc->placements.size(), 1);
 }
 
+void TestToolsIntegration::selectToolDeleteKeyRemovesBackWireWithUndo() {
+	QVERIFY(showBackView());
+	addWire("wb", WireLayer::BackBare, {QPoint(20, 100), QPoint(100, 100)});
+	// 裏面の配線は裏面シーンにしか無い。表面シーンには対応するアイテムが無い。
+	QVERIFY(m_frontScene->wireItemFor("wb") == nullptr);
+	QVERIFY(m_backScene->wireItemFor("wb") != nullptr);
+	m_toolManager->activateSelectTool();
+
+	QTest::mouseClick(m_backView->viewport(), Qt::LeftButton, Qt::NoModifier, backViewPosFor(QPoint(60, 100)));
+	QVERIFY(m_backScene->wireItemFor("wb")->isSelected());
+
+	QTest::keyClick(m_backView->viewport(), Qt::Key_Delete);
+	QCOMPARE(m_doc->wires.size(), 0);
+	QVERIFY(m_backScene->wireItemFor("wb") == nullptr);
+
+	m_doc->undoStack()->undo();
+	QCOMPARE(m_doc->wires.size(), 1);
+	QVERIFY(m_backScene->wireItemFor("wb") != nullptr);
+}
+
+void TestToolsIntegration::selectToolCopiesAndPastesBackWire() {
+	QVERIFY(showBackView());
+	addWire("wb", WireLayer::BackBare, {QPoint(20, 100), QPoint(100, 100)});
+	m_toolManager->activateSelectTool();
+	auto *vp = m_backView->viewport();
+
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, backViewPosFor(QPoint(60, 100)));
+	QTest::keyClick(vp, Qt::Key_C, Qt::ControlModifier);
+	QCOMPARE(m_toolManager->context().clipboardWires.size(), 1);
+	QCOMPARE(m_toolManager->context().clipboardPlacements.size(), 0);
+
+	// 貼り付けると同じ裏面の配線がずれた位置にできる。貼り付けたものが選択され、元の配線は外れる。
+	QTest::keyClick(vp, Qt::Key_V, Qt::ControlModifier);
+	QCOMPARE(m_doc->wires.size(), 2);
+	QCOMPARE(static_cast<int>(m_doc->wires[1]->layer), static_cast<int>(WireLayer::BackBare));
+	QCOMPARE(m_doc->wires[1]->points[0], QPoint(20, 100) + QPoint(units::Pitch * 2, units::Pitch * 2));
+	QVERIFY(m_backScene->wireItemFor(m_doc->wires[1]->uuid)->isSelected());
+	QVERIFY(!m_backScene->wireItemFor("wb")->isSelected());
+}
+
+void TestToolsIntegration::selectToolProcessesItemsSelectedInBothScenesOnce() {
+	// 部品と外形線は表裏どちらのシーンにも同じ uuid のアイテムがあり、選択も両方にミラーされる。
+	// 両シーンの選択を合わせて見るとき、同じものを2回数えたり、2回削除・複製したりしてはいけない。
+	auto placement = std::make_shared<Placement>();
+	placement->uuid = "p1";
+	placement->libraryId = m_libId;
+	placement->partId = m_partId;
+	placement->pos = QPoint(50, 50);
+	m_doc->placements.append(placement);
+	m_frontScene->syncPlacements();
+	m_backScene->syncPlacements();
+	addWire("wo", WireLayer::Outline, {QPoint(20, 150), QPoint(100, 150)});
+	m_toolManager->activateSelectTool();
+	QSignalSpy summary(m_toolManager.get(), &ToolManager::selectionSummaryChanged);
+	auto *vp = m_frontView->viewport();
+
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(55, 55)));
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::ShiftModifier, viewPosFor(QPoint(60, 150)));
+	// 前提: 裏面シーンにもミラーされている。
+	QVERIFY(m_backScene->placementItemFor("p1")->isSelected());
+	QVERIFY(m_backScene->wireItemFor("wo")->isSelected());
+	QCOMPARE(summary.last().first().toString(), QString("選択: 部品1 / 配線1"));
+
+	QTest::keyClick(vp, Qt::Key_C, Qt::ControlModifier);
+	QCOMPARE(m_toolManager->context().clipboardPlacements.size(), 1);
+	QCOMPARE(m_toolManager->context().clipboardWires.size(), 1);
+
+	// 削除は1つのマクロで、部品1つと配線1つに対するコマンドだけを積む。
+	QTest::keyClick(vp, Qt::Key_Delete);
+	QCOMPARE(m_doc->placements.size(), 0);
+	QCOMPARE(m_doc->wires.size(), 0);
+	QCOMPARE(m_doc->undoStack()->count(), 1);
+	QCOMPARE(m_doc->undoStack()->command(0)->childCount(), 2);
+	m_doc->undoStack()->undo();
+	QCOMPARE(m_doc->placements.size(), 1);
+	QCOMPARE(m_doc->wires.size(), 1);
+}
+
+void TestToolsIntegration::selectionSummaryCountsBackWire() {
+	QVERIFY(showBackView());
+	addWire("wb", WireLayer::BackBare, {QPoint(20, 100), QPoint(100, 100)});
+	m_toolManager->activateSelectTool();
+	QSignalSpy summary(m_toolManager.get(), &ToolManager::selectionSummaryChanged);
+
+	QTest::mouseClick(m_backView->viewport(), Qt::LeftButton, Qt::NoModifier, backViewPosFor(QPoint(60, 100)));
+	QCOMPARE(summary.last().first().toString(), QString("選択: 配線1"));
+
+	// 何もない場所をクリックすると選択が外れ、要約も消える。
+	QTest::mouseClick(m_backView->viewport(), Qt::LeftButton, Qt::NoModifier, backViewPosFor(QPoint(200, 200)));
+	QCOMPARE(summary.last().first().toString(), QString());
+}
+
+void TestToolsIntegration::objectListHighlightsBackWireSelectedInBackScene() {
+	MainWindow window;
+	auto *toolManager = window.findChild<ToolManager *>();
+	auto *panel = window.findChild<ObjectListPanel *>();
+	auto *tree = panel ? panel->findChild<QTreeWidget *>() : nullptr;
+	QVERIFY(toolManager != nullptr && tree != nullptr);
+	ToolContext &ctx = toolManager->context();
+
+	// Undo スタックを経由せず、ドキュメントへ直接足して両シーンと一覧を更新する。
+	auto wire = std::make_shared<Wire>();
+	wire->uuid = "wb";
+	wire->layer = WireLayer::BackBare;
+	wire->points = {QPoint(20, 100), QPoint(100, 100)};
+	ctx.document->wires.append(wire);
+	ctx.syncBothScenesWires();
+	panel->refresh();
+	QVERIFY(ctx.frontScene->wireItemFor("wb") == nullptr);
+	QCOMPARE(tree->selectedItems().size(), 0);
+
+	// 裏面ビューで選択した裏面の配線の行が、一覧でも選択状態になる。
+	ctx.backScene->wireItemFor("wb")->setSelected(true);
+	QCOMPARE(tree->selectedItems().size(), 1);
+	QCOMPARE(tree->selectedItems().first()->data(1, Qt::UserRole + 1).toString(), QString("wb"));
+
+	ctx.backScene->clearSelection();
+	QCOMPARE(tree->selectedItems().size(), 0);
+
+	// 選択したまま削除しても、行は消えて選択も空になる (一覧は、選択中のアイテムが消される
+	// 途中でも更新される)。元に戻すと行だけが戻る。
+	ctx.backScene->wireItemFor("wb")->setSelected(true);
+	ctx.document->wires.clear();
+	ctx.syncBothScenesWires();
+	panel->refresh();
+	QCOMPARE(tree->topLevelItem(1)->childCount(), 0);
+	QCOMPARE(tree->selectedItems().size(), 0);
+	ctx.document->wires.append(wire);
+	ctx.syncBothScenesWires();
+	panel->refresh();
+	QCOMPARE(tree->topLevelItem(1)->childCount(), 1);
+	QCOMPARE(tree->selectedItems().size(), 0);
+}
+
 void TestToolsIntegration::wireToolDrawsPolylineOnClicksAndFinishesOnRightClick() {
 	m_toolManager->activateWireTool(WireKind::Bare);
 
@@ -222,6 +438,24 @@ void TestToolsIntegration::wireToolDrawsPolylineOnClicksAndFinishesOnRightClick(
 	QCOMPARE(m_doc->wires[0]->points.size(), 3);
 	QCOMPARE(static_cast<int>(m_doc->wires[0]->layer), static_cast<int>(WireLayer::FrontBare));
 	QVERIFY(m_frontScene->wireItemFor(m_doc->wires[0]->uuid) != nullptr);
+}
+
+void TestToolsIntegration::wireToolCommitsOnEnterAndKeypadEnter() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+	auto *vp = m_frontView->viewport();
+
+	// メインキーボードの Enter (Return) で確定する。
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QTest::keyClick(vp, Qt::Key_Return);
+	QCOMPARE(m_doc->wires.size(), 1);
+
+	// テンキーの Enter は Key_Enter + KeypadModifier として届く。これでも確定できる。
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 60)));
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 60)));
+	QTest::keyClick(vp, Qt::Key_Enter, Qt::KeypadModifier);
+	QCOMPARE(m_doc->wires.size(), 2);
+	QCOMPARE(m_doc->wires[1]->points.size(), 2);
 }
 
 void TestToolsIntegration::wireToolEscDiscardsInProgressWire() {
@@ -249,6 +483,27 @@ void TestToolsIntegration::wireToolIgnoresClickOnSameVertexAgain() {
 	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
 	QTest::mouseClick(m_frontView->viewport(), Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
 	QTest::mouseClick(m_frontView->viewport(), Qt::RightButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+
+	QCOMPARE(m_doc->wires.size(), 1);
+	QCOMPARE(m_doc->wires[0]->points.size(), 2);
+	QCOMPARE(m_doc->wires[0]->points[0], QPoint(20, 20));
+	QCOMPARE(m_doc->wires[0]->points[1], QPoint(60, 20));
+}
+
+void TestToolsIntegration::wireToolCountsSecondFastClickAsVertex() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+	auto *vp = m_frontView->viewport();
+
+	// 素早い2回目のクリック (ダブルクリック間隔・距離の内) は、押下ではなく
+	// MouseButtonDblClick として届く。それも頂点として数えなければ、隣の格子点を
+	// 続けて素早くクリックしたときに頂点が抜けてしまう。
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
+	QTest::mouseDClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	// 同じ頂点への素早い再クリックは、これまでどおり長さ0の区間を作らない。
+	QTest::mouseDClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QTest::mouseClick(vp, Qt::RightButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
 
 	QCOMPARE(m_doc->wires.size(), 1);
 	QCOMPARE(m_doc->wires[0]->points.size(), 2);
@@ -287,6 +542,280 @@ void TestToolsIntegration::wireToolHidesRubberSegmentWhenMouseLeavesView() {
 	QVERIFY(m_frontScene->overlay()->boundingRect().bottom() < 30);
 
 	m_toolManager->cancelCurrent();
+}
+
+void TestToolsIntegration::selectToolStillHitsPartAndWireUnderDraftStroke() {
+	auto placement = std::make_shared<Placement>();
+	placement->uuid = "p1";
+	placement->libraryId = m_libId;
+	placement->partId = m_partId;
+	placement->pos = QPoint(50, 50);
+	m_doc->placements.append(placement);
+	auto wire = std::make_shared<Wire>();
+	wire->uuid = "w1";
+	wire->layer = WireLayer::FrontBare;
+	wire->points = {QPoint(20, 100), QPoint(100, 100)};
+	m_doc->wires.append(wire);
+	m_frontScene->syncPlacements();
+	m_frontScene->syncWires();
+
+	// 下書きで、部品と配線の両方を囲む矩形ができるストロークを描く。
+	auto *vp = m_frontView->viewport();
+	m_toolManager->activateDraftTool();
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(30, 30)));
+	dragMoveTo(viewPosFor(QPoint(80, 80)));
+	dragMoveTo(viewPosFor(QPoint(130, 130)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(130, 130)));
+	QVERIFY(m_frontScene->overlay()->hasDraft());
+	const QRectF bounds = m_frontScene->overlay()->boundingRect();
+	QVERIFY(bounds.contains(QPointF(55, 55)) && bounds.contains(QPointF(60, 100)));
+
+	// 選択ツールに戻すと、その矩形の中でも、部品と配線をこれまでどおりクリックで選択でき、
+	// ヒットテスト (itemAt) にも最前面のオーバーレイではなく部品・配線が返る。
+	m_toolManager->activateSelectTool();
+	QVERIFY(dynamic_cast<PlacementItem *>(m_frontScene->itemAt(QPointF(55, 55), QTransform())) != nullptr);
+	QVERIFY(dynamic_cast<WireItem *>(m_frontScene->itemAt(QPointF(60, 100), QTransform())) != nullptr);
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 100)));
+	QVERIFY(m_frontScene->wireItemFor("w1")->isSelected());
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(55, 55)));
+	QVERIFY(m_frontScene->placementItemFor("p1")->isSelected());
+
+	// ドラッグで部品を移動することもできる。
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(55, 55)));
+	dragMoveTo(viewPosFor(QPoint(85, 85)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(85, 85)));
+	QCOMPARE(m_doc->placements[0]->pos, QPoint(80, 80));
+}
+
+void TestToolsIntegration::draftStrokeIsCommittedWhenReleasedWithDifferentModifiers() {
+	m_toolManager->activateDraftTool();
+	auto *vp = m_frontView->viewport();
+
+	// ストロークの途中で Shift を押し、押したままボタンを離す。離した時点の修飾キーが
+	// 押下時と違っていても、ボタンを離せばストロークは確定する。
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(30, 30)));
+	dragMoveTo(viewPosFor(QPoint(60, 40)));
+	dragMoveTo(viewPosFor(QPoint(90, 50)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::ShiftModifier, viewPosFor(QPoint(90, 50)));
+	QVERIFY(m_frontScene->overlay()->hasDraft());
+
+	// 確定後は、ボタンを押さないカーソル移動でストロークが伸びたり動いたりしない。
+	const QRectF committedBounds = m_frontScene->overlay()->boundingRect();
+	dragMoveTo(viewPosFor(QPoint(250, 250)), Qt::NoButton);
+	QCOMPARE(m_frontScene->overlay()->boundingRect(), committedBounds);
+}
+
+void TestToolsIntegration::draftStrokeIgnoresMovesWithoutTheButtonHeld() {
+	m_toolManager->activateDraftTool();
+	auto *vp = m_frontView->viewport();
+
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(30, 30)));
+	dragMoveTo(viewPosFor(QPoint(60, 40)));
+	const QRectF boundsWhileDragging = m_frontScene->overlay()->boundingRect();
+
+	// ボタンを離したのに release が届かなかった場合 (別ウィンドウの上で離した等)、
+	// ボタンを押さないカーソル移動でストロークが伸び続けてはいけない。
+	dragMoveTo(viewPosFor(QPoint(200, 200)), Qt::NoButton);
+	QCOMPARE(m_frontScene->overlay()->boundingRect(), boundsWhileDragging);
+
+	// 通常の release で確定でき、その後に新しいストロークも描ける。
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 40)));
+	QVERIFY(m_frontScene->overlay()->hasDraft());
+}
+
+void TestToolsIntegration::draftToolStartsStrokeOnFastSecondPress() {
+	m_toolManager->activateDraftTool();
+	auto *vp = m_frontView->viewport();
+
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(30, 30)));
+	dragMoveTo(viewPosFor(QPoint(60, 40)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 40)));
+	QVERIFY(m_frontScene->overlay()->hasDraft());
+	const QRectF firstBounds = m_frontScene->overlay()->boundingRect();
+	QVERIFY(firstBounds.bottom() < 100);
+
+	// 下書きのストロークに使わない修飾キー付きの押下は、ダブルクリックとして届いても、
+	// 普通の押下と同じく無視する。
+	QTest::mouseDClick(vp, Qt::LeftButton, Qt::ShiftModifier, viewPosFor(QPoint(30, 200)));
+	dragMoveTo(viewPosFor(QPoint(90, 230)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::ShiftModifier, viewPosFor(QPoint(90, 230)));
+	QCOMPARE(m_frontScene->overlay()->boundingRect(), firstBounds);
+
+	// 描き終えてすぐの2回目の押下は、押下ではなくダブルクリックとして届く。それでも2本目の
+	// ストロークとして描ける (捨てられない)。
+	QTest::mouseDClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(30, 200)));
+	dragMoveTo(viewPosFor(QPoint(90, 230)));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(90, 230)));
+	const QRectF bounds = m_frontScene->overlay()->boundingRect();
+	QVERIFY(bounds.contains(QPointF(30, 30)) && bounds.contains(QPointF(90, 230)));
+}
+
+void TestToolsIntegration::draftToolEmitsDraftChangedWhenAStrokeIsCommitted() {
+	m_toolManager->activateDraftTool();
+	auto *vp = m_frontView->viewport();
+	QSignalSpy spy(m_frontScene.get(), &BoardScene::draftChanged);
+
+	// 描いている最中は下書きとして数えず、ボタンを離して確定したときに1回だけ知らせる。
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(30, 30)));
+	dragMoveTo(viewPosFor(QPoint(60, 40)));
+	dragMoveTo(viewPosFor(QPoint(90, 50)));
+	QCOMPARE(spy.count(), 0);
+	QVERIFY(!m_frontScene->hasDraft());
+
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(90, 50)));
+	QCOMPARE(spy.count(), 1);
+	QVERIFY(m_frontScene->hasDraft());
+}
+
+void TestToolsIntegration::clearDraftActionClearsDraftsInBothScenes() {
+	MainWindow window;
+	auto *toolManager = window.findChild<ToolManager *>();
+	QAction *clearDraft = window.actionRegistry().action("toolbar.tools.clearDraft");
+	QVERIFY(toolManager != nullptr && clearDraft != nullptr);
+	ToolContext &ctx = toolManager->context();
+	QCOMPARE(clearDraft->text(), QString("下書きを消去"));
+
+	// 下書きが無いときは押せない。表面か裏面のどちらかに下書きができると押せるようになる。
+	QVERIFY(!clearDraft->isEnabled());
+	ctx.backScene->overlay()->addDraftStroke({QPointF(10, 10), QPointF(50, 50)});
+	QVERIFY(clearDraft->isEnabled());
+	ctx.frontScene->overlay()->addDraftStroke({QPointF(20, 20), QPointF(60, 60)});
+	QVERIFY(clearDraft->isEnabled());
+
+	// 表裏どちらの下書きも消え、押せない状態に戻る。下書きは設計データではないので、描いても
+	// 消しても Undo スタックには何も積まれない (消した下書きは元に戻せない)。
+	clearDraft->trigger();
+	QVERIFY(!ctx.frontScene->hasDraft());
+	QVERIFY(!ctx.backScene->hasDraft());
+	QVERIFY(!clearDraft->isEnabled());
+	QVERIFY(!ctx.document->undoStack()->canUndo());
+	QVERIFY(ctx.document->undoStack()->isClean());
+
+	// 片面の下書きだけでも押せる。
+	ctx.backScene->overlay()->addDraftStroke({QPointF(10, 10), QPointF(50, 50)});
+	QVERIFY(clearDraft->isEnabled());
+	clearDraft->trigger();
+	QVERIFY(!ctx.backScene->hasDraft());
+	QVERIFY(!clearDraft->isEnabled());
+}
+
+void TestToolsIntegration::draftsAreClearedWhenTheDocumentIsReplaced() {
+	MainWindow window;
+	auto *toolManager = window.findChild<ToolManager *>();
+	QAction *clearDraft = window.actionRegistry().action("toolbar.tools.clearDraft");
+	auto *newAction = window.findChild<QAction *>("newAction");
+	QVERIFY(toolManager != nullptr && clearDraft != nullptr && newAction != nullptr);
+	ToolContext &ctx = toolManager->context();
+
+	ctx.frontScene->overlay()->addDraftStroke({QPointF(20, 20), QPointF(60, 60)});
+	ctx.backScene->overlay()->addDraftStroke({QPointF(10, 10), QPointF(50, 50)});
+	QVERIFY(clearDraft->isEnabled());
+
+	// ファイル→新規作成で設計データが入れ替わると、下書きも消える (開くも同じ setDocument を通る)。
+	newAction->trigger();
+	QVERIFY(!ctx.frontScene->hasDraft());
+	QVERIFY(!ctx.backScene->hasDraft());
+	QVERIFY(!clearDraft->isEnabled());
+}
+
+void TestToolsIntegration::clearDraftActionIsInEditMenuButNotInDefaultToolbars() {
+	MainWindow window;
+	QAction *clearDraft = window.actionRegistry().action("toolbar.tools.clearDraft");
+	auto *newAction = window.findChild<QAction *>("newAction");
+	auto *editMenu = window.findChild<QMenu *>("menuEdit");
+	QVERIFY(clearDraft != nullptr && newAction != nullptr && editMenu != nullptr);
+
+	// ツールバーのカスタマイズで選べるよう登録されている。
+	QVERIFY(window.actionRegistry().commandIds().contains("toolbar.tools.clearDraft"));
+	// 編集メニューにあり、設計データを入れ替えて編集メニューが作り直されても残る。
+	QVERIFY(editMenu->actions().contains(clearDraft));
+	newAction->trigger();
+	QVERIFY(editMenu->actions().contains(clearDraft));
+	// 既定のツールバーには置かない。
+	for (const char *name : {"viewToolBar", "toolsToolBar"}) {
+		auto *toolbar = window.findChild<QToolBar *>(name);
+		QVERIFY(toolbar != nullptr);
+		QVERIFY(!toolbar->actions().contains(clearDraft));
+	}
+}
+
+void TestToolsIntegration::spaceHeldLeftDragPansInsteadOfDrawingWire() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+	auto *vp = m_frontView->viewport();
+	m_frontView->centerOn(150, 150);
+	const QPoint scrollBefore = scrollPosition();
+
+	// Space 押下中の左ドラッグはビューのパン。配線ツールには押下が届かず、頂点も
+	// プレビューも作られない (以前は押下をツールが消費してパンが始まらなかった)。
+	QTest::keyPress(vp, Qt::Key_Space);
+	QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, QPoint(300, 300));
+	QTest::mouseMove(vp, QPoint(280, 290));
+	QTest::mouseMove(vp, QPoint(260, 280));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, QPoint(260, 280));
+	QTest::keyRelease(vp, Qt::Key_Space);
+
+	const QPoint scrollAfter = scrollPosition();
+	QVERIFY(scrollAfter != scrollBefore);
+	QVERIFY(m_frontScene->overlay()->boundingRect().isEmpty());
+
+	// Space を離したあとの左クリックは、また頂点になる。
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
+	QVERIFY(!m_frontScene->overlay()->boundingRect().isEmpty());
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QTest::mouseClick(vp, Qt::RightButton, Qt::NoModifier, viewPosFor(QPoint(60, 20)));
+	QCOMPARE(m_doc->wires.size(), 1);
+	QCOMPARE(m_doc->wires[0]->points.size(), 2);
+}
+
+void TestToolsIntegration::spaceHeldDoubleClickAlsoPansInsteadOfDrawingWire() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+	auto *vp = m_frontView->viewport();
+	m_frontView->centerOn(150, 150);
+	const QPoint scrollBefore = scrollPosition();
+
+	// 素早い2回目の押下はダブルクリックとして届く。それもパンとして扱う。
+	QTest::keyPress(vp, Qt::Key_Space);
+	QTest::mouseDClick(vp, Qt::LeftButton, Qt::NoModifier, QPoint(300, 300));
+	QTest::mouseMove(vp, QPoint(280, 290));
+	QTest::mouseMove(vp, QPoint(260, 280));
+	QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, QPoint(260, 280));
+	QTest::keyRelease(vp, Qt::Key_Space);
+
+	const QPoint scrollAfter = scrollPosition();
+	QVERIFY(scrollAfter != scrollBefore);
+	QVERIFY(m_frontScene->overlay()->boundingRect().isEmpty());
+}
+
+void TestToolsIntegration::spaceHeldIsClearedWhenViewLosesFocus() {
+	m_toolManager->activateWireTool(WireKind::Bare);
+	auto *vp = m_frontView->viewport();
+
+	// Space を押したままフォーカスが他へ移ると keyRelease は届かない。Space 押下中の扱いが
+	// 残ったままだと、以後の左クリックがすべてパンになって配線を引けなくなる。
+	QTest::keyPress(vp, Qt::Key_Space);
+	QFocusEvent focusOut(QEvent::FocusOut);
+	QApplication::sendEvent(m_frontView.get(), &focusOut);
+
+	QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, viewPosFor(QPoint(20, 20)));
+	QVERIFY(!m_frontScene->overlay()->boundingRect().isEmpty());
+	m_toolManager->cancelCurrent();
+}
+
+void TestToolsIntegration::middleButtonPanEndsEvenIfModifiersChangeBeforeRelease() {
+	auto *vp = m_frontView->viewport();
+	m_frontView->centerOn(150, 150);
+
+	// 中ボタンでパンし、途中で押した Ctrl を保ったままボタンを離す。離した時点の修飾キーが
+	// 押下時と違っても、パンは終わらなければならない。
+	QTest::mousePress(vp, Qt::MiddleButton, Qt::NoModifier, QPoint(300, 300));
+	QTest::mouseMove(vp, QPoint(280, 290));
+	QTest::mouseRelease(vp, Qt::MiddleButton, Qt::ControlModifier, QPoint(280, 290));
+	const QPoint scrollAtRelease = scrollPosition();
+
+	// ボタンを押さない移動でスクロールし続けてはいけない。
+	QTest::mouseMove(vp, QPoint(240, 250));
+	const QPoint scrollAfterMove = scrollPosition();
+	QCOMPARE(scrollAfterMove, scrollAtRelease);
 }
 
 void TestToolsIntegration::rotateShortcutRotatesSelection() {
@@ -344,6 +873,122 @@ void TestToolsIntegration::escapeReturnsPlacePartToolToSelectTool() {
 
 	m_toolManager->cancelCurrent();
 	QVERIFY(dynamic_cast<SelectTool *>(m_toolManager->activeTool()) != nullptr);
+}
+
+void TestToolsIntegration::escapeAfterWireCommitChecksSelectToolButton() {
+	MainWindow window;
+	window.resize(1200, 800);
+	window.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&window));
+	window.activateWindow();
+	QVERIFY(QTest::qWaitForWindowActive(&window));
+	// 起動直後に遅延実行される全体表示 (fitViewsDeferred) を済ませてからクリック位置を求める。
+	QTest::qWait(10);
+
+	auto *toolManager = window.findChild<ToolManager *>();
+	QVERIFY(toolManager != nullptr);
+	QAction *selectButton = window.actionRegistry().action("toolbar.tools.select");
+	QAction *wireButton = window.actionRegistry().action("toolbar.tools.wireBare");
+	QVERIFY(selectButton != nullptr && wireButton != nullptr);
+
+	wireButton->trigger();
+	QVERIFY(wireButton->isChecked());
+
+	// 配線を1本引いて確定する。確定後も配線ツールのまま。
+	BoardScene *scene = toolManager->context().frontScene;
+	auto *view = qobject_cast<BoardView *>(scene->views().value(0));
+	QVERIFY(view != nullptr);
+	const QPoint from = view->mapFromScene(scene->fromModel(view->viewCenterModel()));
+	const QPoint to = from + QPoint(40, 0);
+	QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, from);
+	QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, to);
+	QTest::mouseClick(view->viewport(), Qt::RightButton, Qt::NoModifier, to);
+	QCOMPARE(toolManager->context().document->wires.size(), 1);
+	QVERIFY(dynamic_cast<WireTool *>(toolManager->activeTool()) != nullptr);
+	QVERIFY(wireButton->isChecked());
+
+	// 作図中のものが無い状態で Esc を押すと選択ツールに戻る。ツールバーの押下表示も
+	// 「配線」のままではなく「選択」に変わらなければならない。
+	QTest::keyClick(&window, Qt::Key_Escape);
+	QVERIFY(dynamic_cast<SelectTool *>(toolManager->activeTool()) != nullptr);
+	QVERIFY(selectButton->isChecked());
+	QVERIFY(!wireButton->isChecked());
+}
+
+void TestToolsIntegration::toolbarButtonsFollowTheActiveTool() {
+	MainWindow window;
+	auto *toolManager = window.findChild<ToolManager *>();
+	QVERIFY(toolManager != nullptr);
+
+	const QStringList buttonIds = {"toolbar.tools.select", "toolbar.tools.wireBare", "toolbar.tools.wireInsulated",
+								   "toolbar.tools.wireOutline", "toolbar.tools.draft"};
+	auto checkedButtons = [&] {
+		QStringList checked;
+		for (const QString &id : buttonIds) {
+			if (window.actionRegistry().action(id)->isChecked()) {
+				checked << id;
+			}
+		}
+		return checked;
+	};
+
+	// ボタン以外 (ToolManager を直接操作 = Esc・右クリック・部品パレット等と同じ経路) で
+	// ツールが変わっても、対応するボタンだけが押下状態になる。
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.select"});
+	toolManager->activateWireTool(WireKind::Insulated);
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.wireInsulated"});
+	toolManager->activateWireTool(WireKind::Outline);
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.wireOutline"});
+	toolManager->activateWireTool(WireKind::Bare);
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.wireBare"});
+	toolManager->activateDraftTool();
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.draft"});
+	// 部品配置ツールに対応するボタンは無いので、どれも押下状態にならない。
+	toolManager->activatePlacePartTool("lib", "part");
+	QCOMPARE(checkedButtons(), QStringList{});
+	toolManager->activateSelectTool();
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.select"});
+
+	// ボタンを押したときの動作は従来どおり。押したボタンのツールに切り替わり、そのボタンが
+	// 押下状態になる。すでに押下状態のボタンをもう一度押しても、そのままそのツールが有効。
+	window.actionRegistry().action("toolbar.tools.draft")->trigger();
+	QVERIFY(dynamic_cast<DraftTool *>(toolManager->activeTool()) != nullptr);
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.draft"});
+	window.actionRegistry().action("toolbar.tools.wireOutline")->trigger();
+	auto *wireTool = dynamic_cast<WireTool *>(toolManager->activeTool());
+	QVERIFY(wireTool != nullptr);
+	QCOMPARE(static_cast<int>(wireTool->kind()), static_cast<int>(WireKind::Outline));
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.wireOutline"});
+	window.actionRegistry().action("toolbar.tools.wireOutline")->trigger();
+	QVERIFY(dynamic_cast<WireTool *>(toolManager->activeTool()) != nullptr);
+	QCOMPARE(checkedButtons(), QStringList{"toolbar.tools.wireOutline"});
+}
+
+void TestToolsIntegration::objectListIsDetachedBeforeToolContextIsDestroyed() {
+	auto window = std::make_unique<MainWindow>();
+	auto *toolManager = window->findChild<ToolManager *>();
+	auto *panel = window->findChild<ObjectListPanel *>();
+	auto *tree = panel ? panel->findChild<QTreeWidget *>() : nullptr;
+	QVERIFY(toolManager != nullptr && tree != nullptr);
+	ToolContext &ctx = toolManager->context();
+
+	// 破棄されるとき、Undo スタックに履歴があり、アイテムが選択されたままの状態にする。
+	auto wire = std::make_shared<Wire>();
+	wire->uuid = "w1";
+	wire->layer = WireLayer::FrontBare;
+	wire->points = {QPoint(20, 20), QPoint(80, 20)};
+	ctx.document->undoStack()->push(new AddWireCommand(&ctx, wire));
+	ctx.frontScene->wireItemFor("w1")->setSelected(true);
+	QVERIFY(tree->topLevelItemCount() > 0);
+
+	// 一覧は ToolContext を指している。ToolManager (ToolContext の持ち主) が破棄される時点で、一覧は
+	// もう切り離されて空になっていなければならない。切り離す前に破棄されると、そのあと破棄される
+	// Document の Undo スタックの通知や、シーンが選択中のアイテムを片付けるときの通知で、一覧が
+	// 解放済みの ToolContext を読んでしまう (ASAN で検出される)。
+	int rowsWhenToolManagerDied = -1;
+	connect(toolManager, &QObject::destroyed, this, [&] { rowsWhenToolManagerDied = tree->topLevelItemCount(); });
+	window.reset();
+	QCOMPARE(rowsWhenToolManagerDied, 0);
 }
 
 void TestToolsIntegration::backSceneCoordinatesAreNotMirrored() {

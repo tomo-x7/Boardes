@@ -304,13 +304,20 @@ void ObjectListPanel::syncTreeSelectionFromScenes() {
 	if (!m_ctx || !m_ctx->frontScene) {
 		return;
 	}
+	// 裏面の配線は裏面シーンにしか無いので、表裏両方のシーンの選択を合わせて見る。
+	// 選択中のアイテムが削除される途中でも呼ばれるため、全アイテムを調べて isSelected() を見る
+	// のではなく、削除中のものを既に含まない selectedItems() から集める。
 	QSet<QString> placementUuids;
 	QSet<QString> wireUuids;
-	for (auto *pi : m_ctx->frontScene->allPlacementItems()) {
-		if (pi->isSelected()) placementUuids.insert(pi->placement()->uuid);
-	}
-	for (auto *wi : m_ctx->frontScene->allWireItems()) {
-		if (wi->isSelected()) wireUuids.insert(wi->wire()->uuid);
+	for (BoardScene *scene : {m_ctx->frontScene, m_ctx->backScene}) {
+		if (!scene) continue;
+		for (QGraphicsItem *item : scene->selectedItems()) {
+			if (auto *pi = dynamic_cast<PlacementItem *>(item)) {
+				placementUuids.insert(pi->placement()->uuid);
+			} else if (auto *wi = dynamic_cast<WireItem *>(item)) {
+				wireUuids.insert(wi->wire()->uuid);
+			}
+		}
 	}
 	m_syncingFromScene = true;
 	QTreeWidgetItemIterator it(m_tree);

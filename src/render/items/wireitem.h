@@ -5,6 +5,15 @@
 
 #include "../../model/wire.h"
 
+// 同じ親 (BoardScene の rootItem) の下に並ぶアイテムの描画順 (Z 値)。部品の z は
+// Document::nextZValue() (既存の最大値+1、上限なし) で決まるので、配線とオーバーレイは
+// int の最大値 (約2.1e9) より大きい値にして、部品をいくつ置いても
+// 「部品 < 配線 < オーバーレイ (入力中のプレビュー等)」の順を保つ。
+namespace zorder {
+constexpr qreal Wire = 1.0e10;
+constexpr qreal Overlay = 2.0e10;
+}  // namespace zorder
+
 // 1本の配線 (ポリライン) を描画するアイテム。層ごとに線種・色を変える。
 class WireItem : public QGraphicsItem {
 public:

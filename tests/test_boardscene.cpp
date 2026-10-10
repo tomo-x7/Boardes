@@ -1,10 +1,14 @@
 #include <QImage>
+#include <QPainter>
+#include <QSignalSpy>
 #include <QTest>
+#include <limits>
 
 #include "model/document.h"
 #include "model/librarymanager.h"
 #include "render/boardscene.h"
 #include "render/items/labelitem.h"
+#include "render/items/overlayitem.h"
 #include "render/items/placementitem.h"
 #include "render/items/wireitem.h"
 
@@ -23,7 +27,11 @@ private slots:
 	void placementItemInheritsMirrorOnBackScene();
 	void labelItemCancelsMirrorOnBackScene();
 	void wiresAreRoutedToTheCorrectSideScene();
+	void wiresAreDrawnAbovePlacementsAndBelowOverlay();
 	void removingPlacementRemovesItsRenderItem();
+	void draftStrokeHasUniformOpacityAlongTheLine();
+	void draftChangedSignalFollowsConfirmedDraftStrokes();
+	void settingANewDocumentClearsDrafts();
 	void backViewModeThroughHasIdentityTransform();
 	void backViewModeMirrorYFlipsVertically();
 	void boardRectExcludesPanningMargin();
@@ -140,6 +148,46 @@ void TestBoardScene::wiresAreRoutedToTheCorrectSideScene() {
 	QVERIFY(backScene.wireItemFor("w3") != nullptr);
 }
 
+void TestBoardScene::wiresAreDrawnAbovePlacementsAndBelowOverlay() {
+	auto doc = makeTestDocument();
+	// 部品の z は Document::nextZValue() で 0,1,2,... と増えていく (後に置いたものが上)。
+	// 2番目以降の部品や、極端に大きい z の部品の上を通る配線が、部品の下に隠れてはいけない。
+	for (int i = 0; i < 3; ++i) {
+		auto placement = std::make_shared<Placement>();
+		placement->uuid = QString("q%1").arg(i);
+		placement->libraryId = "lib";
+		placement->partId = "part1";
+		placement->pos = QPoint(20 + i * 30, 50);
+		placement->z = (i == 2) ? std::numeric_limits<int>::max() : i + 1;
+		doc->placements.append(placement);
+	}
+	auto crossing = std::make_shared<Wire>();
+	crossing->uuid = "wc";
+	crossing->layer = WireLayer::FrontBare;
+	crossing->points = {QPoint(0, 60), QPoint(100, 60)};
+	doc->wires.append(crossing);
+
+	BoardScene scene(Side::Front);
+	// ライブラリを渡さないので、部品は解決できず 20x20 のプレースホルダ枠になる。
+	scene.setDocument(doc.get(), nullptr);
+	auto *wire = scene.wireItemFor("wc");
+	QVERIFY(wire != nullptr);
+
+	// 3つの部品 (x=20..40, 50..70, 80..100) の真上、配線上の点は常に配線が最前面。
+	for (int x : {30, 60, 90}) {
+		QGraphicsItem *hit = scene.itemAt(QPointF(x, 60), QTransform());
+		QVERIFY2(hit == wire, qPrintable(QString("x=%1 で配線以外が最前面").arg(x)));
+	}
+	// 配線から外れた部品の上は、これまでどおり部品が最前面 (配線がクリックを奪うのは線の上だけ)。
+	QVERIFY(dynamic_cast<PlacementItem *>(scene.itemAt(QPointF(60, 52), QTransform())) != nullptr);
+
+	// 入力中のプレビュー等 (OverlayItem) は配線よりさらに上。
+	for (auto *placementItem : scene.allPlacementItems()) {
+		QVERIFY(wire->zValue() > placementItem->zValue());
+	}
+	QVERIFY(scene.overlay()->zValue() > wire->zValue());
+}
+
 void TestBoardScene::removingPlacementRemovesItsRenderItem() {
 	auto doc = makeTestDocument();
 	BoardScene scene(Side::Front);
@@ -149,6 +197,84 @@ void TestBoardScene::removingPlacementRemovesItsRenderItem() {
 	doc->placements.clear();
 	scene.syncPlacements();
 	QVERIFY(scene.placementItemFor("p1") == nullptr);
+}
+
+void TestBoardScene::draftStrokeHasUniformOpacityAlongTheLine() {
+	// 下書きの線は半透明。区間ごとに drawLine すると継ぎ目で二重に塗られて濃くなり、点々と
+	// 見える。ゆっくり動かしたマウスの軌跡に相当する 1 単位刻みの折れ線で、濃淡が出ないこと
+	// を確認する (確定済みのストロークと、描いている最中のストロークの両方)。
+	QVector<QPointF> points;
+	for (int i = 0; i < 50; ++i) {
+		points.append(QPointF(2 + i, 5));
+	}
+
+	for (const bool live : {false, true}) {
+		OverlayItem overlay;
+		if (live) {
+			overlay.setLiveDraftStroke(points);
+		} else {
+			overlay.addDraftStroke(points);
+		}
+		QImage image(220, 40, QImage::Format_ARGB32_Premultiplied);
+		image.fill(Qt::transparent);
+		QPainter painter(&image);
+		painter.setRenderHint(QPainter::Antialiasing, true);
+		painter.scale(4, 4);
+		overlay.paint(&painter, nullptr, nullptr);
+		painter.end();
+
+		// 線の中心 (y=5 単位 -> 20px) に沿って、両端の丸いキャップを避けて不透明度を調べる。
+		int minAlpha = 255;
+		int maxAlpha = 0;
+		for (int x = 20; x < 190; ++x) {
+			const int alpha = qAlpha(image.pixel(x, 20));
+			minAlpha = qMin(minAlpha, alpha);
+			maxAlpha = qMax(maxAlpha, alpha);
+		}
+		QVERIFY2(minAlpha > 0, "線が描かれていない");
+		const QString spread = QString("不透明度が %1..%2 でばらつく").arg(minAlpha).arg(maxAlpha);
+		QVERIFY2(maxAlpha - minAlpha <= 2, qPrintable(spread));
+	}
+}
+
+void TestBoardScene::draftChangedSignalFollowsConfirmedDraftStrokes() {
+	auto doc = makeTestDocument();
+	BoardScene scene(Side::Front);
+	scene.setDocument(doc.get(), nullptr);
+	QSignalSpy spy(&scene, &BoardScene::draftChanged);
+	QVERIFY(!scene.hasDraft());
+
+	scene.overlay()->addDraftStroke({QPointF(1, 1), QPointF(20, 20)});
+	QVERIFY(scene.hasDraft());
+	QCOMPARE(spy.count(), 1);
+
+	// 描いている最中のストロークは、確定するまで下書きとして数えない。
+	scene.overlay()->setLiveDraftStroke({QPointF(5, 5), QPointF(9, 9)});
+	QCOMPARE(spy.count(), 1);
+
+	scene.clearDraft();
+	QVERIFY(!scene.hasDraft());
+	QCOMPARE(spy.count(), 2);
+
+	// 消すものが無いときは何も起きない。
+	scene.clearDraft();
+	QCOMPARE(spy.count(), 2);
+}
+
+void TestBoardScene::settingANewDocumentClearsDrafts() {
+	auto doc = makeTestDocument();
+	BoardScene scene(Side::Front);
+	scene.setDocument(doc.get(), nullptr);
+	scene.overlay()->addDraftStroke({QPointF(1, 1), QPointF(20, 20)});
+	QVERIFY(scene.hasDraft());
+	QVERIFY(!scene.overlay()->boundingRect().isEmpty());
+
+	// 下書きは設計データではなく、いま開いている設計データの上の走り書き。別の設計データを
+	// 設定すると、引き継がれずに消える。
+	auto other = makeTestDocument();
+	scene.setDocument(other.get(), nullptr);
+	QVERIFY(!scene.hasDraft());
+	QVERIFY(scene.overlay()->boundingRect().isEmpty());
 }
 
 void TestBoardScene::backViewModeThroughHasIdentityTransform() {

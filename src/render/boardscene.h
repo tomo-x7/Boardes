@@ -99,6 +99,12 @@ public:
 	OverlayItem *overlay() const {
 		return m_overlay;
 	}
+	// 下書き (DraftTool が描く、保存もエクスポートもされない表示専用の線) の有無と消去。設計データ
+	// ではないので Undo の対象にならない。setDocument() で設計データを入れ替えたときも消える。
+	bool hasDraft() const;
+	void clearDraft();
+	// 下書きが増えた・消えた (hasDraft() が変わりうる) とき。
+	Q_SIGNAL void draftChanged();
 
 	// 非所有。マウス/キー入力をアクティブなツールへ転送する先。nullptr ならデフォルトの
 	// QGraphicsScene 標準動作 (ラバーバンド選択など) のみになる。

@@ -49,6 +49,9 @@
 #include "librarymanagerdialog.h"
 #include "toolbarcustomizedialog.h"
 #include "toolbarlayout.h"
+#include "tools/drafttool.h"
+#include "tools/selecttool.h"
+#include "tools/wiretool.h"
 #include "objectlistpanel.h"
 #include "parteditordialog.h"
 #include "partselector.h"
@@ -92,6 +95,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 	m_frontView->setKeymap(&m_keymap);
 	m_backView->setKeymap(&m_keymap);
 	setupSidePanelDock();
+	setupClearDraftAction();
 	setDocument(std::make_unique<Document>());
 
 	ToolContext ctx;
@@ -156,6 +160,13 @@ void MainWindow::checkLibraryLoadIssues() {
 }
 
 MainWindow::~MainWindow() {
+	// ObjectListPanel は m_toolManager が持つ ToolContext を指している。m_toolManager はメンバなので、
+	// 子オブジェクト (パネル・シーン) より先に、m_document よりも先に破棄される。切り離さずにおくと、
+	// 破棄される Document の Undo スタックが発行する indexChanged や、シーンが選択中のアイテムを
+	// 片付けるときの selectionChanged で、パネルが解放済みの ToolContext を読んでしまう。
+	if (m_objectListPanel) {
+		m_objectListPanel->setContext(nullptr);
+	}
 	delete ui;
 }
 
@@ -573,6 +584,9 @@ void MainWindow::setupToolsToolbar() {
 	toolbar->addSeparator();
 	m_actionRegistry.add(QStringLiteral("toolbar.tools.draft"),
 						 addToolAction(QStringLiteral("下書き"), [this] { m_toolManager->activateDraftTool(); }));
+	// 下書きの消去は、排他のツールボタンではなく押したときに1回だけ実行するコマンド。既定の
+	// ツールバーには置かず、ツールバーのカスタマイズで追加できるように登録だけしておく。
+	m_actionRegistry.add(QStringLiteral("toolbar.tools.clearDraft"), m_clearDraftAction);
 
 	toolbar->addSeparator();
 	auto *snapCombo = new QComboBox();
@@ -588,8 +602,52 @@ void MainWindow::setupToolsToolbar() {
 
 	ui->menuView->addAction(toolbar->toggleViewAction());
 
+	connect(m_toolManager.get(), &ToolManager::activeToolChanged, this, &MainWindow::syncToolActionsToActiveTool);
+
 	refreshToolbarIcons();
 	connect(&Theme::instance(), &Theme::changed, this, &MainWindow::refreshToolbarIcons);
+}
+
+void MainWindow::setupClearDraftAction() {
+	m_clearDraftAction = new QAction(tr("下書きを消去"), this);
+	m_clearDraftAction->setToolTip(tr("表面・裏面の下書きの線をすべて消します。元に戻せません。"));
+	connect(m_clearDraftAction, &QAction::triggered, this, &MainWindow::onClearDraftTriggered);
+	connect(m_frontScene, &BoardScene::draftChanged, this, &MainWindow::updateClearDraftActionEnabled);
+	connect(m_backScene, &BoardScene::draftChanged, this, &MainWindow::updateClearDraftActionEnabled);
+	updateClearDraftActionEnabled();
+}
+
+// 下書きがあるときだけ「下書きを消去」を押せるようにする。
+void MainWindow::updateClearDraftActionEnabled() {
+	m_clearDraftAction->setEnabled(m_frontScene->hasDraft() || m_backScene->hasDraft());
+}
+
+void MainWindow::syncToolActionsToActiveTool() {
+	const Tool *tool = m_toolManager->activeTool();
+	QString commandId;
+	if (dynamic_cast<const SelectTool *>(tool)) {
+		commandId = QStringLiteral("toolbar.tools.select");
+	} else if (const auto *wireTool = dynamic_cast<const WireTool *>(tool)) {
+		if (wireTool->kind() == WireKind::Bare) {
+			commandId = QStringLiteral("toolbar.tools.wireBare");
+		} else if (wireTool->kind() == WireKind::Insulated) {
+			commandId = QStringLiteral("toolbar.tools.wireInsulated");
+		} else {
+			commandId = QStringLiteral("toolbar.tools.wireOutline");
+		}
+	} else if (dynamic_cast<const DraftTool *>(tool)) {
+		commandId = QStringLiteral("toolbar.tools.draft");
+	}
+
+	// setChecked() は toggled だけを発行して triggered は発行しない。ボタンの動作 (ツールの
+	// 切り替え) が再び走ることはない。
+	if (QAction *action = commandId.isEmpty() ? nullptr : m_actionRegistry.action(commandId)) {
+		// 排他グループなので、他のボタンは自動で外れる。
+		action->setChecked(true);
+	} else if (QAction *checked = m_toolActionGroup->checkedAction()) {
+		// 部品配置ツールなど、対応するボタンが無いツールのときは、どのボタンも押下状態にしない。
+		checked->setChecked(false);
+	}
 }
 
 // 表示/ツールツールバーの各アクションに線画アイコンを設定する。現在のテーマの
@@ -719,6 +777,8 @@ void MainWindow::setDocument(std::unique_ptr<Document> doc, const QString &fileP
 	redoAction->setShortcut(QKeySequence::Redo);
 	ui->menuEdit->addAction(undoAction);
 	ui->menuEdit->addAction(redoAction);
+	ui->menuEdit->addSeparator();
+	ui->menuEdit->addAction(m_clearDraftAction);
 
 	connect(m_document->undoStack(), &QUndoStack::cleanChanged, this, &MainWindow::onUndoStackCleanChanged);
 
@@ -802,6 +862,13 @@ void MainWindow::onEscapeTriggered() {
 	if (m_toolManager) {
 		m_toolManager->cancelCurrent();
 	}
+}
+
+void MainWindow::onClearDraftTriggered() {
+	// 下書きは設計データではなく、ツールが描く表示専用の一時的な線 (保存もエクスポートもされない)。
+	// そのため Undo スタックには積まず、消した下書きは「元に戻す」で戻せない。
+	m_frontScene->clearDraft();
+	m_backScene->clearDraft();
 }
 
 void MainWindow::onDrcFindingActivated(const DrcFinding &finding) {

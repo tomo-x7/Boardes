@@ -4,6 +4,7 @@
 #include <QGraphicsItem>
 #include <QImage>
 #include <QVector>
+#include <functional>
 
 #include "../../model/wire.h"
 
@@ -16,6 +17,8 @@ public:
 	explicit OverlayItem(QGraphicsItem *parent = nullptr);
 
 	QRectF boundingRect() const override;
+	// 空の形状を返し、ヒットテストには一切参加しない。
+	QPainterPath shape() const override;
 	void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
 	// 入力中の配線: 確定済みの点列 + 現在のカーソル位置。
@@ -32,6 +35,9 @@ public:
 	bool hasDraft() const {
 		return !m_draftStrokes.isEmpty();
 	}
+	// 完成した下書きが増えた・消えたときに呼ばれる。このアイテムは QObject ではないので、
+	// BoardScene が draftChanged シグナルへ中継するために使う。
+	void setDraftChangedCallback(std::function<void()> callback) { m_draftChanged = std::move(callback); }
 
 	// 下書きモード: ドラッグ中のストロークをリアルタイムに表示する。
 	void setLiveDraftStroke(const QVector<QPointF> &points);
@@ -45,6 +51,7 @@ private:
 
 	QVector<QVector<QPointF>> m_draftStrokes;
 	QVector<QPointF> m_liveDraftStroke;
+	std::function<void()> m_draftChanged;
 
 	bool m_hasGhost = false;
 	QImage m_ghostImage;

@@ -131,11 +131,16 @@ std::optional<InputGesture> InputGesture::fromStorageString(const QString &s) {
 	return g;
 }
 
+Qt::KeyboardModifiers InputGesture::withoutKeypad(Qt::KeyboardModifiers mods) {
+	return mods & ~Qt::KeyboardModifiers(Qt::KeypadModifier);
+}
+
 bool InputGesture::matchesKey(int eventKey, quint32 eventNativeScanCode, Qt::KeyboardModifiers eventMods) const {
 	if (kind != InputKind::Key) {
 		return false;
 	}
-	if (mods != eventMods) {
+	// 割り当て側にも付いていることがあるので (以前に記録した値)、両方から取り除いて比べる。
+	if (withoutKeypad(mods) != withoutKeypad(eventMods)) {
 		return false;
 	}
 	if (key != 0) {

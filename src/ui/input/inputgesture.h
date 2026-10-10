@@ -35,7 +35,13 @@ struct InputGesture {
 
 	// キーボードイベントにマッチするか。key が 0 の場合は nativeScanCode で照合する
 	// (Qt がキー名を認識できない、左手デバイス等の独自キーに対応するため)。
+	// 修飾キーは厳密に比較するが、Qt::KeypadModifier だけは無視する (withoutKeypad())。
 	bool matchesKey(int eventKey, quint32 eventNativeScanCode, Qt::KeyboardModifiers eventMods) const;
+
+	// テンキーから来たキーイベントには Qt::KeypadModifier が付く (テンキーの Enter は Key_Enter +
+	// KeypadModifier)。これは「テンキー由来のキー」というだけで Ctrl/Shift のような修飾キーでは
+	// ないので、照合でも、キー割り当ての記録でも取り除く。
+	static Qt::KeyboardModifiers withoutKeypad(Qt::KeyboardModifiers mods);
 
 	// マウスボタン系 (MouseButton/MouseDouble/MouseDrag) の入力にマッチするか。
 	// asKind は呼び出し側が「今どの種類の判定をしているか」を渡す

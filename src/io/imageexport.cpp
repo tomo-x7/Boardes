@@ -7,6 +7,9 @@
 #include <memory>
 
 #include "../render/boardscene.h"
+#include "../render/items/overlayitem.h"
+#include "../render/items/placementitem.h"
+#include "../render/items/wireitem.h"
 
 namespace imageexport {
 
@@ -35,6 +38,75 @@ private:
 	QList<QGraphicsItem *> m_previouslySelected;
 };
 
+// エクスポート中だけオーバーレイを隠し、終了後に元へ戻す。オーバーレイは下書きの線・入力中の
+// 配線のプレビュー・部品配置のゴーストといった、ツールが一時的に描く表示専用のもので、設計データ
+// ではないため、書き出し画像には写さない。
+struct OverlayGuard {
+	explicit OverlayGuard(BoardScene *scene) {
+		if (scene && scene->overlay()->isVisible()) {
+			hidden = scene->overlay();
+			hidden->hide();
+		}
+	}
+	~OverlayGuard() {
+		if (hidden) {
+			hidden->show();
+		}
+	}
+
+	// 隠した場合だけ設定する (元から隠れていたら、そのままにして、戻すこともしない)。
+	OverlayItem *hidden = nullptr;
+};
+
+// エクスポート中だけ、同一ネットの強調 (配線のシアンの縁取り) を外し、終了後に元へ戻す。選択ツールが
+// マウスの位置に応じて一時的に付ける表示で、設計データではないため、書き出し画像には写さない。
+struct NetHighlightGuard {
+	explicit NetHighlightGuard(BoardScene *scene) {
+		if (!scene) {
+			return;
+		}
+		for (WireItem *item : scene->allWireItems()) {
+			if (item->isNetHighlighted()) {
+				item->setNetHighlighted(false);
+				cleared.append(item);
+			}
+		}
+	}
+	~NetHighlightGuard() {
+		for (WireItem *item : std::as_const(cleared)) {
+			item->setNetHighlighted(true);
+		}
+	}
+
+	// 強調を外した配線 (終了後に戻すもの)。
+	QList<WireItem *> cleared;
+};
+
+// エクスポート中だけ、部品のホバー (マウスが乗っている) ことを示す枠を描かないようにし、終了後に元へ戻す。
+// マウスの位置に応じて一時的に出る表示で、設計データではないため、書き出し画像には写さない。ホバーの状態
+// 自体は変えず、枠を描くかどうかだけを切り替えるので、終了後にマウスがまだ乗っている部品には枠がまた出る。
+struct HoverFrameGuard {
+	explicit HoverFrameGuard(BoardScene *scene) {
+		if (!scene) {
+			return;
+		}
+		for (PlacementItem *item : scene->allPlacementItems()) {
+			if (!item->isHoverFrameSuppressed()) {
+				item->setHoverFrameSuppressed(true);
+				suppressed.append(item);
+			}
+		}
+	}
+	~HoverFrameGuard() {
+		for (PlacementItem *item : std::as_const(suppressed)) {
+			item->setHoverFrameSuppressed(false);
+		}
+	}
+
+	// 枠を止めた部品 (終了後に戻すもの)。
+	QList<PlacementItem *> suppressed;
+};
+
 }  // namespace
 
 QImage renderToImage(BoardScene *scene, const Options &options) {
@@ -42,6 +114,9 @@ QImage renderToImage(BoardScene *scene, const Options &options) {
 		return {};
 	}
 	SelectionGuard guard(scene);
+	OverlayGuard overlayGuard(scene);
+	NetHighlightGuard netHighlightGuard(scene);
+	HoverFrameGuard hoverFrameGuard(scene);
 
 	// sceneRect() はパン用の余白を含む (BoardScene::syncBoard() 参照) ので、書き出しには
 	// 余白なしの基板外形 (boardRect()) を使う。
@@ -150,6 +225,15 @@ bool saveAsSvg(BoardScene *front, BoardScene *back, const Options &options, cons
 		std::unique_ptr<SelectionGuard> frontGuard, backGuard;
 		if (needFront) frontGuard = std::make_unique<SelectionGuard>(front);
 		if (needBack) backGuard = std::make_unique<SelectionGuard>(back);
+		std::unique_ptr<OverlayGuard> frontOverlayGuard, backOverlayGuard;
+		if (needFront) frontOverlayGuard = std::make_unique<OverlayGuard>(front);
+		if (needBack) backOverlayGuard = std::make_unique<OverlayGuard>(back);
+		std::unique_ptr<NetHighlightGuard> frontNetGuard, backNetGuard;
+		if (needFront) frontNetGuard = std::make_unique<NetHighlightGuard>(front);
+		if (needBack) backNetGuard = std::make_unique<NetHighlightGuard>(back);
+		std::unique_ptr<HoverFrameGuard> frontHoverGuard, backHoverGuard;
+		if (needFront) frontHoverGuard = std::make_unique<HoverFrameGuard>(front);
+		if (needBack) backHoverGuard = std::make_unique<HoverFrameGuard>(back);
 
 		if (needFront) {
 			front->render(&painter, QRectF(QPointF(0, 0), frontRect.size()), frontRect);

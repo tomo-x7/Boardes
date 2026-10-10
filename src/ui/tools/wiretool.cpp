@@ -69,6 +69,13 @@ bool WireTool::mouseRelease(BoardScene *scene, QGraphicsSceneMouseEvent *) {
 	return m_activeScene == scene;
 }
 
+bool WireTool::mouseDoubleClick(BoardScene *scene, QGraphicsSceneMouseEvent *event) {
+	// 素早い2回目のクリックは押下ではなくダブルクリックとして届く。配線ではダブルクリックに
+	// 特別な意味は無い (確定は右クリックか Enter) ので、2回目も普通のクリックとして扱って
+	// 頂点を追加する。同じ点への再クリックは mousePress() が無視する。
+	return mousePress(scene, event);
+}
+
 void WireTool::mouseLeave(BoardScene *scene) {
 	if (!m_activeScene || scene != m_activeScene) {
 		return;

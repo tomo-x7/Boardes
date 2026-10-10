@@ -46,16 +46,20 @@ signals:
 protected:
 	void wheelEvent(QWheelEvent *event) override;
 	void mousePressEvent(QMouseEvent *event) override;
+	void mouseDoubleClickEvent(QMouseEvent *event) override;
 	void mouseMoveEvent(QMouseEvent *event) override;
 	void mouseReleaseEvent(QMouseEvent *event) override;
 	void keyPressEvent(QKeyEvent *event) override;
 	void keyReleaseEvent(QKeyEvent *event) override;
 	void focusInEvent(QFocusEvent *event) override;
+	void focusOutEvent(QFocusEvent *event) override;
 	void leaveEvent(QEvent *event) override;
 
 private:
 	qreal m_zoom = 1.0;
 	bool m_panning = false;
+	// パンを始めたボタン。離したときに修飾キーの状態に関わらずこのボタンでパンを終える。
+	Qt::MouseButton m_panButton = Qt::NoButton;
 	bool m_spaceHeld = false;
 	QPoint m_lastPanPos;
 	QGraphicsView::DragMode m_dragModeBeforeSpace = QGraphicsView::RubberBandDrag;
@@ -66,5 +70,7 @@ private:
 		return m_keymap ? *m_keymap : fallback;
 	}
 
-	void beginPan(const QPoint &pos);
+	// このマウス押下がビュー自身のパン開始か (ツールには渡さない)。
+	bool startsPan(const QMouseEvent *event) const;
+	void beginPan(const QPoint &pos, Qt::MouseButton button);
 };

@@ -11,6 +11,7 @@ void DraftTool::deactivate() {
 		m_activeScene->overlay()->clearLiveDraftStroke();
 	}
 	m_activeScene = nullptr;
+	m_strokeButton = Qt::NoButton;
 	m_currentStroke.clear();
 }
 
@@ -20,6 +21,7 @@ bool DraftTool::mousePress(BoardScene *scene, QGraphicsSceneMouseEvent *event) {
 		return false;
 	}
 	m_activeScene = scene;
+	m_strokeButton = event->button();
 	m_currentStroke = {scene->toModel(event->scenePos())};
 	scene->overlay()->setLiveDraftStroke(m_currentStroke);
 	return true;
@@ -27,6 +29,11 @@ bool DraftTool::mousePress(BoardScene *scene, QGraphicsSceneMouseEvent *event) {
 
 bool DraftTool::mouseMove(BoardScene *scene, QGraphicsSceneMouseEvent *event) {
 	if (!m_activeScene || scene != m_activeScene || m_currentStroke.isEmpty()) {
+		return false;
+	}
+	// ストロークを始めたボタンが押されていない移動は無視する。ボタンを離したのに release が
+	// 届かなかった場合に、ボタンを押さないカーソル移動でストロークが伸び続けないようにする。
+	if (!(event->buttons() & m_strokeButton)) {
 		return false;
 	}
 	m_currentStroke.append(scene->toModel(event->scenePos()));
@@ -38,15 +45,25 @@ bool DraftTool::mouseRelease(BoardScene *scene, QGraphicsSceneMouseEvent *event)
 	if (!m_activeScene || scene != m_activeScene) {
 		return false;
 	}
-	if (m_context->keymapOrDefault().matchesMouseButton(QStringLiteral("draft.stroke"), event->button(),
-														 event->modifiers(), InputKind::MouseDrag)) {
+	// ストロークを始めたボタンを離したら確定する。離した時点の修飾キーまで照合し直すと、
+	// ストロークの途中で Shift 等を押しただけで確定できず、ボタンを離した後もストロークが
+	// 生きたままカーソルに追従し続けてしまう。
+	if (event->button() == m_strokeButton) {
 		scene->overlay()->addDraftStroke(m_currentStroke);
 		scene->overlay()->clearLiveDraftStroke();
 		m_currentStroke.clear();
 		m_activeScene = nullptr;
+		m_strokeButton = Qt::NoButton;
 		return true;
 	}
 	return false;
+}
+
+bool DraftTool::mouseDoubleClick(BoardScene *scene, QGraphicsSceneMouseEvent *event) {
+	// 素早い2回目の押下 (前のストロークを描き終えてすぐ次を描き始めたとき) は、押下ではなく
+	// ダブルクリックとして届く。下書きではダブルクリックに特別な意味は無いので、2回目も普通の
+	// 押下として扱い、新しいストロークを始める。
+	return mousePress(scene, event);
 }
 
 bool DraftTool::cancel() {
@@ -57,6 +74,7 @@ bool DraftTool::cancel() {
 		m_activeScene->overlay()->clearLiveDraftStroke();
 	}
 	m_activeScene = nullptr;
+	m_strokeButton = Qt::NoButton;
 	m_currentStroke.clear();
 	return true;
 }

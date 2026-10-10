@@ -17,10 +17,13 @@ public:
 	bool mousePress(BoardScene *scene, QGraphicsSceneMouseEvent *event) override;
 	bool mouseMove(BoardScene *scene, QGraphicsSceneMouseEvent *event) override;
 	bool mouseRelease(BoardScene *scene, QGraphicsSceneMouseEvent *event) override;
+	bool mouseDoubleClick(BoardScene *scene, QGraphicsSceneMouseEvent *event) override;
 	bool cancel() override;
 	QString statusHint(const Keymap &keymap) const override;
 
 private:
 	BoardScene *m_activeScene = nullptr;
+	// 今のストロークを始めたボタン。離したときは修飾キーの状態に関わらずこのボタンで確定する。
+	Qt::MouseButton m_strokeButton = Qt::NoButton;
 	QVector<QPointF> m_currentStroke;
 };
