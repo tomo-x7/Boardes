@@ -149,7 +149,7 @@ void WireItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidge
 		// 頂点にハンドル。太い線に埋もれないよう、線幅より少し大きくする。
 		painter->setPen(Qt::NoPen);
 		painter->setBrush(Qt::black);
-		const qreal hs = qMax(3.5 * px, width + 1.5 * px);
+		const qreal hs = clampToBounds(qMax(3.5 * px, width + 1.5 * px));
 		for (const QPoint &p : m_wire->points) {
 			painter->drawRect(QRectF(p.x() - hs / 2, p.y() - hs / 2, hs, hs));
 		}

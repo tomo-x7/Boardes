@@ -38,7 +38,7 @@ QString BoardMenu::buttonText(const BoardSpec *board) {
 	if (!hasBoard(board)) {
 		return tr("基板: 未設定");
 	}
-	return tr("基板: %1 (%2)").arg(displayName(*board), gridText(*board));
+	return tr("基板: %1 (%2)").arg(escapeMnemonic(displayName(*board)), gridText(*board));
 }
 
 void BoardMenu::rebuild() {

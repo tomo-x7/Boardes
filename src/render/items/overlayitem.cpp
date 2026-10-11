@@ -54,7 +54,7 @@ void OverlayItem::recomputeBounds() {
 		hasAny = true;
 	}
 	// 配線プレビューは WireItem と同じ太さで描くので、余白も WireItem に揃える。
-	const qreal margin = qMax(6.0, WireItem::kBoundsMargin);
+	const qreal margin = WireItem::kBoundsMargin;
 	m_bounds = hasAny ? r.adjusted(-margin, -margin, margin, margin) : QRectF();
 }
 
@@ -161,7 +161,7 @@ void OverlayItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWi
 
 		painter->setPen(Qt::NoPen);
 		painter->setBrush(WireItem::colorForLayer(m_wireLayer));
-		const qreal r = qMax(1.5 * px, pen.widthF() * 0.75);
+		const qreal r = qMin(qMax(1.5 * px, pen.widthF() * 0.75), WireItem::kBoundsMargin);
 		for (const auto &p : m_wirePoints) {
 			painter->drawEllipse(QPointF(p), r, r);
 		}

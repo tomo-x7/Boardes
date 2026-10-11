@@ -864,7 +864,8 @@ void MainWindow::setupBoardMenu() {
 	// BoardMenu を持たせる。Qt 6 の QAction::setMenu() はメニューの menuAction() を差し替えるので、
 	// メニューバーのメニューを共有すると、そちらのタイトルまでボタンの文字列になってしまうため。
 	m_boardButtonMenu = new BoardMenu(&m_libraryManager, this);
-	m_boardAction = new QAction(this);
+	// text はツールバーのカスタマイズでのコマンド名、iconText はツールボタンに出る文字列。
+	m_boardAction = new QAction(tr("基板"), this);
 	m_boardAction->setMenu(m_boardButtonMenu);
 	// ユーザーが作ったツールバーに置くと分割ボタンになり、本体を押すと triggered だけが来る。
 	// そのときもメニューを開く (既定のツールバーでは InstantPopup なので triggered は来ない)。
@@ -885,7 +886,7 @@ void MainWindow::updateBoardUi() {
 	const BoardSpec &board = m_document->board;
 	m_boardMenu->setCurrentBoard(&board);
 	m_boardButtonMenu->setCurrentBoard(&board);
-	m_boardAction->setText(BoardMenu::buttonText(&board));
+	m_boardAction->setIconText(BoardMenu::buttonText(&board));
 	if (BoardMenu::hasBoard(&board)) {
 		// 名前に %1 などが含まれていても置換し直されないよう、文字列はまとめて1回で埋め込む。
 		const QString name = board.name.isEmpty() ? board.id : board.name;

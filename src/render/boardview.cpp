@@ -210,10 +210,25 @@ void BoardView::leaveEvent(QEvent *event) {
 	}
 }
 
+namespace {
+bool showsNoBoardHint(const QGraphicsScene *scene) {
+	const auto *bs = qobject_cast<const BoardScene *>(scene);
+	return bs && bs->boardRect().isEmpty();
+}
+}  // namespace
+
+void BoardView::scrollContentsBy(int dx, int dy) {
+	QGraphicsView::scrollContentsBy(dx, dy);
+	// スクロールは表示済みの画素をずらして使い回すので、画面に固定した案内の文字も一緒にずれて
+	// 残像になる。案内を出しているあいだは全体を描き直す。
+	if (showsNoBoardHint(scene())) {
+		viewport()->update();
+	}
+}
+
 void BoardView::drawForeground(QPainter *painter, const QRectF &rect) {
 	QGraphicsView::drawForeground(painter, rect);
-	auto *bs = qobject_cast<BoardScene *>(scene());
-	if (!bs || !bs->boardRect().isEmpty()) {
+	if (!showsNoBoardHint(scene())) {
 		return;
 	}
 	// ビューの座標系 (画面ピクセル) で描く。ズームに関わらず同じ大きさにするため。

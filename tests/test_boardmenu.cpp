@@ -156,6 +156,10 @@ void TestBoardMenu::buttonTextShowsNameAndGrid() {
 	BoardSpec unnamed = board;
 	unnamed.name.clear();
 	QCOMPARE(BoardMenu::buttonText(&unnamed), QString("基板: icb (26×36)"));
+	// ボタンの文字列では & がアクセラレータになるので、そのまま見えるよう && にする。
+	BoardSpec ampersand = board;
+	ampersand.name = "A&B";
+	QCOMPARE(BoardMenu::buttonText(&ampersand), QString("基板: A&&B (26×36)"));
 }
 
 QTEST_MAIN(TestBoardMenu)

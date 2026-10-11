@@ -251,9 +251,6 @@ void PartSelector::applyListMode(bool list) {
 		m_listView->setWordWrap(false);
 		m_listView->setUniformItemSizes(true);
 	}
-	// setViewMode() は movement / resizeMode を既定値に戻すので設定し直す。
-	m_listView->setMovement(QListView::Static);
-	m_listView->setResizeMode(QListView::Adjust);
 }
 
 void PartSelector::refreshIcons() {

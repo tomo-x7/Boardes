@@ -1033,7 +1033,10 @@ void TestToolsIntegration::boardMenuAppliesLibraryBoardAndFollowsUndo() {
 	auto *menu = qobject_cast<BoardMenu *>(boardButton->menu());
 	QVERIFY(menu != nullptr);
 	Document *doc = toolManager->context().document;
-	QCOMPARE(boardButton->text(), QString("基板: 未設定"));
+	// ボタンに出る文字列 (iconText) が現在の基板を兼ねる。コマンド名 (text、ツールバーのカスタマイズで
+	// 一覧に出る) は「基板」のまま変わらない。
+	QCOMPARE(boardButton->iconText(), QString("基板: 未設定"));
+	QCOMPARE(boardButton->text(), QString("基板"));
 
 	menu->rebuild();
 	QAction *item = findActionStartingWith(menu, "ICB-93\t");
@@ -1041,16 +1044,17 @@ void TestToolsIntegration::boardMenuAppliesLibraryBoardAndFollowsUndo() {
 	item->trigger();
 	QCOMPARE(doc->board.id, QString("icb93"));
 	QCOMPARE(doc->board.size, QSize(270, 370));
-	QCOMPARE(boardButton->text(), QString("基板: ICB-93 (26×36)"));
+	QCOMPARE(boardButton->iconText(), QString("基板: ICB-93 (26×36)"));
+	QCOMPARE(boardButton->text(), QString("基板"));
 	menu->rebuild();
 	QVERIFY(findActionStartingWith(menu, "ICB-93\t")->isChecked());
 
 	// 基板の変更は Undo で戻せ、ボタンの表示も追従する。
 	doc->undoStack()->undo();
 	QVERIFY(doc->board.size.isEmpty());
-	QCOMPARE(boardButton->text(), QString("基板: 未設定"));
+	QCOMPARE(boardButton->iconText(), QString("基板: 未設定"));
 	doc->undoStack()->redo();
-	QCOMPARE(boardButton->text(), QString("基板: ICB-93 (26×36)"));
+	QCOMPARE(boardButton->iconText(), QString("基板: ICB-93 (26×36)"));
 
 	// 現在の基板をマイライブラリに登録すると、id が重ならないよう別の id で増える。
 	menu->rebuild();
@@ -1121,12 +1125,18 @@ void TestToolsIntegration::editingCurrentBoardKeepsImportOnlyFields() {
 	imported.outlineRect = QRect(2, 2, 100, 80);
 	ctx.document->undoStack()->push(new SetBoardCommand(&ctx, ctx.document->board, imported));
 
+	// モーダルの基板エディタが開いたら OK を押す。想定外のダイアログなら閉じて、テストが exec() で
+	// 止まったままにならないようにする。タイマーは window に結び付け、ダイアログが開かずに
+	// trigger() が返った場合も、このテストの後で (破棄済みの変数を参照して) 動かないようにする。
 	bool dialogSeen = false;
-	QTimer::singleShot(0, this, [&] {
-		auto *dialog = qobject_cast<BoardEditorDialog *>(QApplication::activeModalWidget());
-		QVERIFY(dialog != nullptr);
-		dialogSeen = true;
-		dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+	QTimer::singleShot(0, &window, [&] {
+		QWidget *modal = QApplication::activeModalWidget();
+		if (auto *dialog = qobject_cast<BoardEditorDialog *>(modal)) {
+			dialogSeen = true;
+			dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+		} else if (modal) {
+			modal->close();
+		}
 	});
 	menu->rebuild();
 	findActionStartingWith(menu, "現在の基板を編集")->trigger();

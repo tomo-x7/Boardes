@@ -29,6 +29,7 @@ public:
 	void rebuild();
 
 	// ツールバーの基板ボタンに出す文字列 (「基板: 名前 (列×行)」、未設定なら「基板: 未設定」)。
+	// ボタンの文字列では & がアクセラレータ扱いになるので、名前の & は && にしてある。
 	static QString buttonText(const BoardSpec *board);
 	// 基板が設定されているか (新規の設計データは基板サイズが空)。
 	static bool hasBoard(const BoardSpec *board) {

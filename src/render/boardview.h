@@ -60,6 +60,7 @@ protected:
 	void leaveEvent(QEvent *event) override;
 	// 基板が未設定のあいだ、中央に「基板メニューから選ぶ」案内を出す。
 	void drawForeground(QPainter *painter, const QRectF &rect) override;
+	void scrollContentsBy(int dx, int dy) override;
 
 private:
 	qreal m_zoom = 1.0;
