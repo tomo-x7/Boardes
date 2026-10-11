@@ -2,6 +2,7 @@
 
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QScrollBar>
 #include <QWheelEvent>
 #include <cmath>
@@ -132,6 +133,9 @@ void BoardView::mouseDoubleClickEvent(QMouseEvent *event) {
 }
 
 void BoardView::mouseMoveEvent(QMouseEvent *event) {
+	if (auto *bs = qobject_cast<BoardScene *>(scene())) {
+		emit cursorModelPosChanged(bs->toModel(mapToScene(event->pos())));
+	}
 	if (m_panning) {
 		const QPoint delta = event->pos() - m_lastPanPos;
 		m_lastPanPos = event->pos();
@@ -200,7 +204,37 @@ void BoardView::focusOutEvent(QFocusEvent *event) {
 
 void BoardView::leaveEvent(QEvent *event) {
 	QGraphicsView::leaveEvent(event);
+	emit cursorLeft();
 	if (auto *bs = qobject_cast<BoardScene *>(scene())) {
 		bs->notifyViewLeave();
 	}
+}
+
+namespace {
+bool showsNoBoardHint(const QGraphicsScene *scene) {
+	const auto *bs = qobject_cast<const BoardScene *>(scene);
+	return bs && bs->boardRect().isEmpty();
+}
+}  // namespace
+
+void BoardView::scrollContentsBy(int dx, int dy) {
+	QGraphicsView::scrollContentsBy(dx, dy);
+	// スクロールは表示済みの画素をずらして使い回すので、画面に固定した案内の文字も一緒にずれて
+	// 残像になる。案内を出しているあいだは全体を描き直す。
+	if (showsNoBoardHint(scene())) {
+		viewport()->update();
+	}
+}
+
+void BoardView::drawForeground(QPainter *painter, const QRectF &rect) {
+	QGraphicsView::drawForeground(painter, rect);
+	if (!showsNoBoardHint(scene())) {
+		return;
+	}
+	// ビューの座標系 (画面ピクセル) で描く。ズームに関わらず同じ大きさにするため。
+	painter->save();
+	painter->resetTransform();
+	painter->setPen(QColor(170, 170, 170));
+	painter->drawText(viewport()->rect(), Qt::AlignCenter, tr("基板が未設定\n「基板」メニューから選択"));
+	painter->restore();
 }

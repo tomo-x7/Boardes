@@ -59,8 +59,7 @@ ObjectListPanel::ObjectListPanel(QWidget *parent) : QWidget(parent) {
 	auto *headerRow = new QHBoxLayout();
 	headerRow->addWidget(m_filterEdit);
 	headerRow->addWidget(helphint::button(
-		tr("現在の設計データに含まれる部品・配線の一覧です。目玉アイコンで表示/非表示を切り替え、"
-		   "ダブルクリックでその位置へジャンプできます。右クリックで削除・回転などの操作ができます。"),
+		tr("チェック: 表示/非表示\nダブルクリック: その位置へ移動\n右クリック: 削除・回転など"),
 		this));
 
 	auto *layout = new QVBoxLayout(this);

@@ -48,6 +48,12 @@ const IconSpec Draft{
 const IconSpec ZoomBarMinus{"<line x1='5' y1='12' x2='19' y2='12'/>"};
 const IconSpec ZoomBarPlus{"<line x1='12' y1='5' x2='12' y2='19'/><line x1='5' y1='12' x2='19' y2='12'/>"};
 
+// 以下は claude.ai/design 由来ではなく、部品セレクタのリスト表示切替用に同じ線画の流儀で描いたもの。
+const IconSpec ListView{
+	"<line x1='9' y1='6' x2='20' y2='6'/><line x1='9' y1='12' x2='20' y2='12'/>"
+	"<line x1='9' y1='18' x2='20' y2='18'/><rect x='4' y='4.5' width='3' height='3' rx='0.5'/>"
+	"<rect x='4' y='10.5' width='3' height='3' rx='0.5'/><rect x='4' y='16.5' width='3' height='3' rx='0.5'/>"};
+
 namespace {
 
 // 論理サイズ logicalSize (px) ・拡大率 dpr でアイコンを1枚ラスタライズする。

@@ -42,6 +42,10 @@ signals:
 	// フォーカスを得た/失った。倍率バー・表裏連動が「今操作しているのはどちらのビューか」を
 	// 判定するために使う。
 	void focusReceived(BoardView *self);
+	// カーソルのモデル座標 (BoardScene::toModel 経由。裏面ビューでも基板の表から見た座標)。
+	// ステータスバーの座標表示に使う。ビューの外へ出たら cursorLeft。
+	void cursorModelPosChanged(QPointF modelPos);
+	void cursorLeft();
 
 protected:
 	void wheelEvent(QWheelEvent *event) override;
@@ -54,6 +58,9 @@ protected:
 	void focusInEvent(QFocusEvent *event) override;
 	void focusOutEvent(QFocusEvent *event) override;
 	void leaveEvent(QEvent *event) override;
+	// 基板が未設定のあいだ、中央に「基板メニューから選ぶ」案内を出す。
+	void drawForeground(QPainter *painter, const QRectF &rect) override;
+	void scrollContentsBy(int dx, int dy) override;
 
 private:
 	qreal m_zoom = 1.0;

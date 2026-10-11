@@ -1,13 +1,20 @@
+#include <QApplication>
+#include <QDialogButtonBox>
 #include <QImage>
 #include <QMenu>
+#include <QMenuBar>
 #include <QMouseEvent>
+#include <QPushButton>
 #include <QScrollBar>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 #include <QTreeWidget>
 
+#include "commands/boardcommands.h"
 #include "commands/wirecommands.h"
 #include "core/units.h"
 #include "io/partio.h"
@@ -18,6 +25,8 @@
 #include "render/items/overlayitem.h"
 #include "render/items/placementitem.h"
 #include "render/items/wireitem.h"
+#include "ui/boardeditordialog.h"
+#include "ui/boardmenu.h"
 #include "ui/mainwindow.h"
 #include "ui/objectlistpanel.h"
 #include "ui/tools/drafttool.h"
@@ -71,6 +80,9 @@ private slots:
 	void escapeAfterWireCommitChecksSelectToolButton();
 	void toolbarButtonsFollowTheActiveTool();
 	void objectListIsDetachedBeforeToolContextIsDestroyed();
+	void boardMenuAppliesLibraryBoardAndFollowsUndo();
+	void boardButtonIsOnToolsToolbarInTheSameRowAsViewToolbar();
+	void editingCurrentBoardKeepsImportOnlyFields();
 	void backSceneCoordinatesAreNotMirrored();
 
 private:
@@ -989,6 +1001,156 @@ void TestToolsIntegration::objectListIsDetachedBeforeToolContextIsDestroyed() {
 	connect(toolManager, &QObject::destroyed, this, [&] { rowsWhenToolManagerDied = tree->topLevelItemCount(); });
 	window.reset();
 	QCOMPARE(rowsWhenToolManagerDied, 0);
+}
+
+namespace {
+QAction *findActionStartingWith(const QMenu *menu, const QString &prefix) {
+	for (QAction *a : menu->actions()) {
+		if (a->text().startsWith(prefix)) {
+			return a;
+		}
+	}
+	return nullptr;
+}
+}  // namespace
+
+void TestToolsIntegration::boardMenuAppliesLibraryBoardAndFollowsUndo() {
+	// ライブラリ管理を開かなくても、基板メニューからライブラリの基板を選んで使える。
+	BoardSpec board;
+	board.id = "icb93";
+	board.name = "ICB-93";
+	board.cols = 26;
+	board.rows = 36;
+	board.pitch = 10;
+	board.origin = QPoint(10, 10);
+	board.size = QSize(270, 370);
+	QVERIFY(m_libMgr->addBoardToMyLibrary(board).ok);
+
+	MainWindow window;
+	auto *toolManager = window.findChild<ToolManager *>();
+	QAction *boardButton = window.actionRegistry().action("toolbar.tools.board");
+	QVERIFY(toolManager != nullptr && boardButton != nullptr);
+	auto *menu = qobject_cast<BoardMenu *>(boardButton->menu());
+	QVERIFY(menu != nullptr);
+	Document *doc = toolManager->context().document;
+	// ボタンに出る文字列 (iconText) が現在の基板を兼ねる。コマンド名 (text、ツールバーのカスタマイズで
+	// 一覧に出る) は「基板」のまま変わらない。
+	QCOMPARE(boardButton->iconText(), QString("基板: 未設定"));
+	QCOMPARE(boardButton->text(), QString("基板"));
+
+	menu->rebuild();
+	QAction *item = findActionStartingWith(menu, "ICB-93\t");
+	QVERIFY(item != nullptr);
+	item->trigger();
+	QCOMPARE(doc->board.id, QString("icb93"));
+	QCOMPARE(doc->board.size, QSize(270, 370));
+	QCOMPARE(boardButton->iconText(), QString("基板: ICB-93 (26×36)"));
+	QCOMPARE(boardButton->text(), QString("基板"));
+	menu->rebuild();
+	QVERIFY(findActionStartingWith(menu, "ICB-93\t")->isChecked());
+
+	// 基板の変更は Undo で戻せ、ボタンの表示も追従する。
+	doc->undoStack()->undo();
+	QVERIFY(doc->board.size.isEmpty());
+	QCOMPARE(boardButton->iconText(), QString("基板: 未設定"));
+	doc->undoStack()->redo();
+	QCOMPARE(boardButton->iconText(), QString("基板: ICB-93 (26×36)"));
+
+	// 現在の基板をマイライブラリに登録すると、id が重ならないよう別の id で増える。
+	menu->rebuild();
+	findActionStartingWith(menu, "現在の基板をマイライブラリに登録")->trigger();
+	auto *mainWindowLibMgr = toolManager->context().libraryManager;
+	const auto myLib = mainWindowLibMgr->library(LibraryManager::myLibraryId());
+	QVERIFY(myLib != nullptr);
+	QCOMPARE(myLib->boards.size(), 2);
+	QVERIFY(myLib->boards.contains("icb93-2"));
+}
+
+void TestToolsIntegration::boardButtonIsOnToolsToolbarInTheSameRowAsViewToolbar() {
+	MainWindow window;
+	auto *viewToolBar = window.findChild<QToolBar *>("viewToolBar");
+	auto *toolsToolBar = window.findChild<QToolBar *>("toolsToolBar");
+	QVERIFY(viewToolBar != nullptr && toolsToolBar != nullptr);
+	// 縦方向をキャンバスに回すため、表示ツールバーとツールツールバーは同じ行に並べる。
+	QVERIFY(!window.toolBarBreak(toolsToolBar));
+	// 基板ボタンはツールツールバーの先頭。押すとすぐ基板メニューが開く。
+	QAction *boardButton = window.actionRegistry().action("toolbar.tools.board");
+	QVERIFY(boardButton != nullptr);
+	QCOMPARE(toolsToolBar->actions().value(0), boardButton);
+	QVERIFY(qobject_cast<BoardMenu *>(boardButton->menu()) != nullptr);
+	auto *button = qobject_cast<QToolButton *>(toolsToolBar->widgetForAction(boardButton));
+	QVERIFY(button != nullptr);
+	QCOMPARE(button->popupMode(), QToolButton::InstantPopup);
+	// メニューバーにも「基板」メニューがあり、ボタンの文字列 (現在の基板名) に引きずられず
+	// 「基板(&B)」のまま。
+	QAction *menuBarEntry = nullptr;
+	for (QAction *a : window.menuBar()->actions()) {
+		if (qobject_cast<BoardMenu *>(a->menu())) {
+			menuBarEntry = a;
+		}
+	}
+	QVERIFY(menuBarEntry != nullptr);
+	QCOMPARE(menuBarEntry->text(), QString("基板(&B)"));
+	QCOMPARE(menuBarEntry->menu()->title(), QString("基板(&B)"));
+	QVERIFY(menuBarEntry->menu() != boardButton->menu());
+}
+
+void TestToolsIntegration::editingCurrentBoardKeepsImportOnlyFields() {
+	// 基板エディタは変形穴配置・ランドカット・取付穴・幅マーカーを扱わない。基板メニューから
+	// 現在の基板を編集して OK を押しただけで、PasS 取込基板のこれらが消えてはいけない。
+	MainWindow window;
+	auto *toolManager = window.findChild<ToolManager *>();
+	QVERIFY(toolManager != nullptr);
+	ToolContext &ctx = toolManager->context();
+	// メニューバーの「基板」メニューから操作する。
+	BoardMenu *menu = nullptr;
+	for (QAction *a : window.menuBar()->actions()) {
+		if (auto *m = qobject_cast<BoardMenu *>(a->menu())) {
+			menu = m;
+		}
+	}
+	QVERIFY(menu != nullptr);
+
+	BoardSpec imported;
+	imported.id = "pass";
+	imported.name = "PasS 基板";
+	imported.cols = 10;
+	imported.rows = 8;
+	imported.pitch = 10;
+	imported.origin = QPoint(10, 10);
+	imported.size = QSize(2 * 10 + 9 * 10, 2 * 10 + 7 * 10);  // BoardEditorDialog が導出するサイズと同じ
+	imported.absentHoles = {QPoint(0, 0)};
+	imported.stripBreaks = {QPoint(3, 3)};
+	imported.mountingHoles = {{QPoint(5, 5), 30}};
+	imported.outlineRect = QRect(2, 2, 100, 80);
+	ctx.document->undoStack()->push(new SetBoardCommand(&ctx, ctx.document->board, imported));
+
+	// モーダルの基板エディタが開いたら OK を押す。想定外のダイアログなら閉じて、テストが exec() で
+	// 止まったままにならないようにする。タイマーは window に結び付け、ダイアログが開かずに
+	// trigger() が返った場合も、このテストの後で (破棄済みの変数を参照して) 動かないようにする。
+	bool dialogSeen = false;
+	QTimer::singleShot(0, &window, [&] {
+		QWidget *modal = QApplication::activeModalWidget();
+		if (auto *dialog = qobject_cast<BoardEditorDialog *>(modal)) {
+			dialogSeen = true;
+			dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+		} else if (modal) {
+			modal->close();
+		}
+	});
+	menu->rebuild();
+	findActionStartingWith(menu, "現在の基板を編集")->trigger();
+	QVERIFY(dialogSeen);
+
+	const BoardSpec &edited = ctx.document->board;
+	QCOMPARE(edited.id, QString("pass"));
+	QCOMPARE(edited.absentHoles, imported.absentHoles);
+	QCOMPARE(edited.stripBreaks, imported.stripBreaks);
+	QCOMPARE(edited.mountingHoles, imported.mountingHoles);
+	QVERIFY(edited.outlineRect.has_value());
+	QCOMPARE(*edited.outlineRect, *imported.outlineRect);
+	// 編集も1回の Undo で戻せる。
+	QCOMPARE(ctx.document->undoStack()->count(), 2);
 }
 
 void TestToolsIntegration::backSceneCoordinatesAreNotMirrored() {

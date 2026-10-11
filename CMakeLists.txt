@@ -109,6 +109,8 @@ set(BOARDES_CORE_SOURCES
 	src/ui/viewlink.cpp
 	src/ui/partselector.h
 	src/ui/partselector.cpp
+	src/ui/boardmenu.h
+	src/ui/boardmenu.cpp
 	src/ui/objectlistpanel.h
 	src/ui/objectlistpanel.cpp
 	src/ui/drcpanel.h

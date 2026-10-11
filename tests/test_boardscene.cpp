@@ -30,6 +30,8 @@ private slots:
 	void wiresAreDrawnAbovePlacementsAndBelowOverlay();
 	void removingPlacementRemovesItsRenderItem();
 	void draftStrokeHasUniformOpacityAlongTheLine();
+	void wirePaintWidthKeepsModelWidthAndScreenMinimum();
+	void wiresAndPreviewAreDrawnThick();
 	void draftChangedSignalFollowsConfirmedDraftStrokes();
 	void settingANewDocumentClearsDrafts();
 	void backViewModeThroughHasIdentityTransform();
@@ -235,6 +237,64 @@ void TestBoardScene::draftStrokeHasUniformOpacityAlongTheLine() {
 		const QString spread = QString("不透明度が %1..%2 でばらつく").arg(minAlpha).arg(maxAlpha);
 		QVERIFY2(maxAlpha - minAlpha <= 2, qPrintable(spread));
 	}
+}
+
+void TestBoardScene::wirePaintWidthKeepsModelWidthAndScreenMinimum() {
+	// 拡大しているとき (画面1px = 0.25単位) はモデル単位の太さ。裸線 2.5、被覆配線 4.0 (約0.64mm/1.0mm)。
+	QCOMPARE(WireItem::paintWidth(WireLayer::FrontBare, 0.25), 2.5);
+	QCOMPARE(WireItem::paintWidth(WireLayer::BackBare, 0.25), 2.5);
+	QCOMPARE(WireItem::paintWidth(WireLayer::FrontInsulated, 0.25), 4.0);
+	QCOMPARE(WireItem::paintWidth(WireLayer::BackInsulated, 0.25), 4.0);
+	// 縮小しているとき (画面1px = 3単位) は画面上の最小幅 (裸線 2px、被覆配線 3px) を保つ。
+	QCOMPARE(WireItem::paintWidth(WireLayer::FrontBare, 3.0), 6.0);
+	QCOMPARE(WireItem::paintWidth(WireLayer::FrontInsulated, 3.0), 9.0);
+	// ただし boundingRect() の余白を超えては描かない (再描画の取り残しを防ぐ)。
+	QVERIFY(WireItem::paintWidth(WireLayer::FrontInsulated, 100.0) <= 2.0 * WireItem::kBoundsMargin);
+}
+
+namespace {
+// image の x 列で、不透明度が alphaThreshold を超える画素が縦に何画素あるか。
+int opaqueRunInColumn(const QImage &image, int x, int alphaThreshold = 64) {
+	int count = 0;
+	for (int y = 0; y < image.height(); ++y) {
+		if (qAlpha(image.pixel(x, y)) > alphaThreshold) {
+			++count;
+		}
+	}
+	return count;
+}
+}  // namespace
+
+void TestBoardScene::wiresAndPreviewAreDrawnThick() {
+	// 4倍表示 (1単位 = 4px)。裸線は 2.5単位 = 10px 前後の太さで描かれる (以前は 1単位 = 4px)。
+	auto wire = std::make_shared<Wire>();
+	wire->uuid = "w";
+	wire->layer = WireLayer::FrontBare;
+	wire->points = {QPoint(5, 10), QPoint(45, 10)};
+	WireItem item(wire);
+	QImage image(200, 80, QImage::Format_ARGB32_Premultiplied);
+	image.fill(Qt::transparent);
+	{
+		QPainter painter(&image);
+		painter.setRenderHint(QPainter::Antialiasing, true);
+		painter.scale(4, 4);
+		item.paint(&painter, nullptr, nullptr);
+	}
+	const int wireThickness = opaqueRunInColumn(image, 100);
+	QVERIFY2(wireThickness >= 9 && wireThickness <= 11, qPrintable(QString::number(wireThickness)));
+
+	// 入力中のプレビューも確定後と同じ太さで描く (以前は画面上 1.2px の細い破線だった)。
+	OverlayItem overlay;
+	overlay.setWirePreview({QPoint(5, 10), QPoint(45, 10)}, QPoint(45, 10), WireLayer::FrontBare);
+	image.fill(Qt::transparent);
+	{
+		QPainter painter(&image);
+		painter.setRenderHint(QPainter::Antialiasing, true);
+		painter.scale(4, 4);
+		overlay.paint(&painter, nullptr, nullptr);
+	}
+	const int previewThickness = opaqueRunInColumn(image, 100);
+	QVERIFY2(previewThickness >= 9 && previewThickness <= 11, qPrintable(QString::number(previewThickness)));
 }
 
 void TestBoardScene::draftChangedSignalFollowsConfirmedDraftStrokes() {

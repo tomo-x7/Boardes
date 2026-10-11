@@ -53,7 +53,9 @@ void OverlayItem::recomputeBounds() {
 		r |= QRectF(m_ghostPos, QSizeF(m_ghostSize));
 		hasAny = true;
 	}
-	m_bounds = hasAny ? r.adjusted(-6, -6, 6, 6) : QRectF();
+	// 配線プレビューは WireItem と同じ太さで描くので、余白も WireItem に揃える。
+	const qreal margin = WireItem::kBoundsMargin;
+	m_bounds = hasAny ? r.adjusted(-margin, -margin, margin, margin) : QRectF();
 }
 
 void OverlayItem::setWirePreview(const QVector<QPoint> &confirmedPoints, QPoint cursorPoint, WireLayer layer) {
@@ -143,28 +145,27 @@ void OverlayItem::clearPlacementGhost() {
 
 void OverlayItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *) {
 	if (m_hasWirePreview && !m_wirePoints.isEmpty()) {
-		// 破線・頂点マーカーは他のインタラクティブな装飾 (WireItem の選択縁取り・
-		// PlacementItem の選択枠など) と同じく、ズームしても画面上のサイズが
-		// 変わらない「デバイス非依存の1px」単位 (px) で幅を決める。以前はモデル
-		// 単位の固定値だったため、拡大すると太くなりすぎ・縮小すると見えなくなり、
-		// 他の装飾と見た目の太さが揃っていなかった。
+		// 確定後の配線 (WireItem) と同じ太さ・線種で描き、少し透かして「入力中」と分かるようにする。
+		// カーソルへ伸びる最後の区間だけは、まだ頂点が決まっていないので破線にする。
 		const qreal px = 1.0 / qMax(0.001, qAbs(painter->transform().m11()));
-
-		QPen pen(WireItem::colorForLayer(m_wireLayer));
-		pen.setWidthF(1.2 * px);
-		pen.setStyle(Qt::DashLine);
+		painter->save();
+		painter->setOpacity(0.75);
+		QPen pen = WireItem::penForLayer(m_wireLayer, px);
 		painter->setPen(pen);
-		for (int i = 1; i < m_wirePoints.size(); ++i) {
-			painter->drawLine(m_wirePoints[i - 1], m_wirePoints[i]);
-		}
+		// 半透明なので、区間ごとに drawLine すると継ぎ目が二重に塗られて濃くなる。1本の折れ線で描く。
+		painter->drawPolyline(m_wirePoints.constData(), m_wirePoints.size());
+		pen.setCapStyle(Qt::FlatCap);
+		pen.setDashPattern({2.0, 1.0});
+		painter->setPen(pen);
 		painter->drawLine(m_wirePoints.last(), m_wireCursor);
 
 		painter->setPen(Qt::NoPen);
 		painter->setBrush(WireItem::colorForLayer(m_wireLayer));
-		const qreal r = 1.5 * px;
+		const qreal r = qMin(qMax(1.5 * px, pen.widthF() * 0.75), WireItem::kBoundsMargin);
 		for (const auto &p : m_wirePoints) {
 			painter->drawEllipse(QPointF(p), r, r);
 		}
+		painter->restore();
 	}
 
 	if (!m_draftStrokes.isEmpty() || !m_liveDraftStroke.isEmpty()) {

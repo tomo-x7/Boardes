@@ -34,6 +34,8 @@ class QDockWidget;
 class QToolBar;
 class ZoomBar;
 class ViewLinkController;
+class BoardMenu;
+class QLabel;
 
 class MainWindow : public QMainWindow {
 	Q_OBJECT
@@ -42,9 +44,8 @@ public:
 	explicit MainWindow(QWidget *parent = nullptr);
 	~MainWindow();
 
-	// スクリーンショット採取ハーネス (design/screenshot_all.cpp) が、実際に構築された
-	// ツールバーと同じ ActionRegistry を使って ToolbarCustomizeDialog を単独表示するために
-	// 公開している。通常の操作では MainWindow 自身が内部でしか使わない。
+	// テストが、実際に構築されたツールバーのアクションをコマンド ID で引くために公開している。
+	// 通常の操作では MainWindow 自身が内部でしか使わない。
 	ActionRegistry &actionRegistry() {
 		return m_actionRegistry;
 	}
@@ -77,6 +78,11 @@ private slots:
 	void onClearDraftTriggered();
 	void onEscapeTriggered();
 
+	void onEditCurrentBoardTriggered();
+	void onNewBoardTriggered();
+	void onRegisterCurrentBoardTriggered();
+	void onCursorModelPosChanged(QPointF modelPos);
+
 private:
 	Ui::MainWindow *ui;
 
@@ -96,6 +102,12 @@ private:
 	QActionGroup *m_toolActionGroup = nullptr;
 	// 編集メニューの「下書きを消去」。下書きがあるときだけ有効。
 	QAction *m_clearDraftAction = nullptr;
+	// 「基板」メニュー (メニューバー) と、ツールバーの基板ボタン (同じ内容の別メニューを開く)。
+	BoardMenu *m_boardMenu = nullptr;
+	BoardMenu *m_boardButtonMenu = nullptr;
+	QAction *m_boardAction = nullptr;
+	// ステータスバーのカーソル位置 (mm)。
+	QLabel *m_cursorPosLabel = nullptr;
 	QMenu *m_recentFilesMenu = nullptr;
 	DrcPanel *m_drcPanel = nullptr;
 	StatsPanel *m_statsPanel = nullptr;
@@ -122,6 +134,10 @@ private:
 	void setupViewMenuAndToolbar();
 	void setupToolsToolbar();
 	void setupClearDraftAction();
+	void setupBoardMenu();
+	// ツールバーの基板ボタンの文字列・ツールチップと、基板メニューのチェック表示を現在の基板に合わせる。
+	// 設計データの入れ替え時と、Undo スタックが動いたとき (基板の変更・取り消し) に呼ぶ。
+	void updateBoardUi();
 	void updateClearDraftActionEnabled();
 	// ToolManager のアクティブなツールに合わせて、ツールバーのツールボタンの押下表示を更新する。
 	// Esc・右クリックでの解除、ドキュメント切替、部品パレットからの配置ツール切替など、

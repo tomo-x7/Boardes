@@ -180,8 +180,7 @@ BoardEditorDialog::BoardEditorDialog(QWidget *parent) : QDialog(parent) {
 	auto *frontBgLabelLayout = new QHBoxLayout(frontBgLabelWidget);
 	frontBgLabelLayout->setContentsMargins(0, 0, 0, 0);
 	frontBgLabelLayout->addWidget(new QLabel(tr("表面画像:"), this));
-	frontBgLabelLayout->addWidget(
-		helphint::button(tr("画像モードでは必須です。この画像の画素サイズがそのまま基板サイズになります。"), this));
+	frontBgLabelLayout->addWidget(helphint::button(tr("画像モードでは必須。画素サイズ = 基板サイズ"), this));
 	m_form->addRow(frontBgLabelWidget, m_frontBgRow);
 
 	m_backBgRow = new QHBoxLayout();
@@ -193,8 +192,7 @@ BoardEditorDialog::BoardEditorDialog(QWidget *parent) : QDialog(parent) {
 	auto *backBgLabelLayout = new QHBoxLayout(backBgLabelWidget);
 	backBgLabelLayout->setContentsMargins(0, 0, 0, 0);
 	backBgLabelLayout->addWidget(new QLabel(tr("裏面画像 (任意):"), this));
-	backBgLabelLayout->addWidget(helphint::button(
-		tr("「基板を裏から見た向き」で用意してください (PasS の *_.bmp と同じ規約)。"), this));
+	backBgLabelLayout->addWidget(helphint::button(tr("基板を裏から見た向きの画像 (PasS の *_.bmp と同じ規約)"), this));
 	m_form->addRow(backBgLabelWidget, m_backBgRow);
 
 	m_buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);

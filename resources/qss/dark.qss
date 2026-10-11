@@ -29,30 +29,30 @@ QMainWindow, QDialog, QWidget#centralwidget {
 QMenuBar {
 	background: #2C2C2C;
 	border-bottom: 1px solid #454545;
-	padding: 2px 6px;
+	padding: 0 2px;
 }
-QMenuBar::item { padding: 4px 10px; border-radius: 2px; color: #BEBEBE; background: transparent; }
+QMenuBar::item { padding: 2px 8px; border-radius: 2px; color: #BEBEBE; background: transparent; }
 QMenuBar::item:selected { background: #383838; color: #F2F2F2; }
 
 QMenu {
 	background: #1C1C1C;
 	border: 1px solid #454545;
-	padding: 4px;
+	padding: 2px;
 }
-QMenu::item { padding: 6px 24px 6px 14px; border-radius: 2px; color: #F2F2F2; }
+QMenu::item { padding: 3px 20px 3px 10px; border-radius: 2px; color: #F2F2F2; }
 QMenu::item:selected { background: #383838; color: #F2F2F2; }
 QMenu::item:disabled { color: #8C8C8C; }
-QMenu::separator { height: 1px; background: #454545; margin: 4px 8px; }
+QMenu::separator { height: 1px; background: #454545; margin: 2px 6px; }
 
 /* ---- ツールバー ---- */
-QToolBar { background: #2C2C2C; border: none; padding: 4px 8px; spacing: 2px; }
-QToolBar::separator { background: #454545; width: 1px; margin: 4px 6px; }
+QToolBar { background: #2C2C2C; border: none; padding: 1px 2px; spacing: 1px; }
+QToolBar::separator { background: #454545; width: 1px; margin: 3px 3px; }
 
 QToolButton {
 	background: transparent;
 	border: 1px solid transparent;
 	border-radius: 2px;
-	padding: 6px;
+	padding: 3px;
 	color: #BEBEBE;
 }
 QToolButton:hover { background: #383838; color: #F2F2F2; }
@@ -74,11 +74,15 @@ QToolButton[toolAction="true"]:checked {
 QToolButton[wireSide="front"] { color: #2060D0; }
 QToolButton[wireSide="back"] { color: #D05020; }
 
+/* ツールバーの基板ボタン (押すと基板メニュー)。右下のメニュー矢印が文字に重ならないよう余白を取る。 */
+QToolButton#boardButton { padding-right: 14px; }
+QToolButton#boardButton::menu-indicator { subcontrol-origin: padding; subcontrol-position: right center; right: 3px; }
+
 /* ---- ドック・タブ ---- */
 QDockWidget { titlebar-close-icon: none; }
 QDockWidget::title {
 	background: #2C2C2C;
-	padding: 7px 12px;
+	padding: 3px 8px;
 	font-weight: 700;
 	color: #BEBEBE;
 	border-bottom: 1px solid #454545;
@@ -90,7 +94,7 @@ QTabWidget::pane { border: none; }
 QTabBar { background: #232323; border-bottom: 1px solid #454545; }
 QTabBar::tab {
 	background: transparent;
-	padding: 8px 16px;
+	padding: 4px 10px;
 	color: #BEBEBE;
 	border-bottom: 2px solid transparent;
 }
@@ -102,7 +106,7 @@ QComboBox, QLineEdit, QAbstractSpinBox {
 	background: #1C1C1C;
 	border: 1px solid #454545;
 	border-radius: 2px;
-	padding: 5px 8px;
+	padding: 2px 5px;
 	color: #F2F2F2;
 	selection-background-color: #383838;
 	selection-color: #F2F2F2;
@@ -110,7 +114,7 @@ QComboBox, QLineEdit, QAbstractSpinBox {
 QComboBox:hover, QLineEdit:hover, QAbstractSpinBox:hover { border-color: #686868; }
 QComboBox:focus, QLineEdit:focus, QAbstractSpinBox:focus { border-color: #F2F2F2; }
 QComboBox:disabled, QLineEdit:disabled, QAbstractSpinBox:disabled { color: #8C8C8C; background: #2C2C2C; }
-QComboBox::drop-down { border: none; width: 20px; }
+QComboBox::drop-down { border: none; width: 16px; }
 QComboBox QAbstractItemView {
 	background: #1C1C1C;
 	border: 1px solid #454545;
@@ -150,7 +154,7 @@ QHeaderView::section {
 	font-size: 11.5px;
 	border: none;
 	border-bottom: 1px solid #454545;
-	padding: 6px 10px;
+	padding: 2px 6px;
 }
 QTableView, QListView, QTreeView {
 	background: #1C1C1C;
@@ -159,7 +163,7 @@ QTableView, QListView, QTreeView {
 	alternate-background-color: #232323;
 	outline: none;
 }
-QTableView::item, QTreeView::item { padding: 3px; }
+QTableView::item, QTreeView::item { padding: 1px 3px; }
 QTableView::item:selected, QListView::item:selected, QTreeView::item:selected { background: #383838; color: #F2F2F2; }
 QTableView::item:hover, QTreeView::item:hover { background: #2C2C2C; }
 QTreeView::branch { background: #1C1C1C; }
@@ -169,7 +173,7 @@ QPushButton {
 	background: #1C1C1C;
 	border: 1px solid #454545;
 	border-radius: 2px;
-	padding: 6px 14px;
+	padding: 3px 10px;
 	color: #F2F2F2;
 }
 QPushButton:hover { background: #383838; }
@@ -199,12 +203,12 @@ QStatusBar QLabel { color: #8C8C8C; background: transparent; }
 QStatusBar::item { border: none; }
 
 /* ---- スクロールバー (仕様書に明記は無いが、装飾ゼロ・ニュートラルグレーの原則に合わせフラット化) ---- */
-QScrollBar:vertical { background: #2C2C2C; width: 12px; margin: 0; border: none; }
+QScrollBar:vertical { background: #2C2C2C; width: 10px; margin: 0; border: none; }
 QScrollBar::handle:vertical { background: #4A4A4A; min-height: 24px; border-radius: 2px; }
 QScrollBar::handle:vertical:hover { background: #686868; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; border: none; background: none; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
-QScrollBar:horizontal { background: #2C2C2C; height: 12px; margin: 0; border: none; }
+QScrollBar:horizontal { background: #2C2C2C; height: 10px; margin: 0; border: none; }
 QScrollBar::handle:horizontal { background: #4A4A4A; min-width: 24px; border-radius: 2px; }
 QScrollBar::handle:horizontal:hover { background: #686868; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; border: none; background: none; }
@@ -228,16 +232,16 @@ QLabel#viewHeaderFront {
 	background: #2C2C2C;
 	color: #BEBEBE;
 	font-weight: 700;
-	font-size: 12px;
-	padding: 6px 0;
+	font-size: 11px;
+	padding: 1px 0;
 	border-bottom: 2px solid #2060D0;
 }
 QLabel#viewHeaderBack {
 	background: #2C2C2C;
 	color: #BEBEBE;
 	font-weight: 700;
-	font-size: 12px;
-	padding: 6px 0;
+	font-size: 11px;
+	padding: 1px 0;
 	border-bottom: 2px solid #D05020;
 }
 

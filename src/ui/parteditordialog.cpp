@@ -235,7 +235,7 @@ PartEditorDialog::PartEditorDialog(QWidget *parent) : QDialog(parent) {
 	auto *pinListLabelRow = new QHBoxLayout();
 	pinListLabelRow->addWidget(new QLabel(tr("ピン一覧:"), this));
 	pinListLabelRow->addWidget(helphint::button(
-		tr("キャンバス左クリックでピンを追加、右クリックで直近のピンを削除します。"), this));
+		tr("左クリック: ピン追加\n右クリック: 直近のピンを削除"), this));
 	pinListLabelRow->addStretch(1);
 	sideColumn->addLayout(pinListLabelRow);
 	sideColumn->addWidget(m_pinTable, /*stretch=*/1);
@@ -247,8 +247,7 @@ PartEditorDialog::PartEditorDialog(QWidget *parent) : QDialog(parent) {
 	anchorRow->addWidget(m_anchorPickButton);
 	anchorRow->addWidget(m_anchorResetButton);
 	anchorRow->addWidget(helphint::button(
-		tr("配置・移動時に基板の格子点 (穴の中心) に合わせる基準座標です。"
-		   "既定は番号が最小のピンの位置です。"),
+		tr("配置・移動で格子点 (穴の中心) に合わせる基準座標。既定は番号が最小のピン"),
 		this));
 	sideColumn->addLayout(anchorRow);
 

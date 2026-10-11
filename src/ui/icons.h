@@ -40,6 +40,9 @@ extern const IconSpec Draft;
 extern const IconSpec ZoomBarMinus;
 extern const IconSpec ZoomBarPlus;
 
+// ---- 部品セレクタ ----
+extern const IconSpec ListView;  // リスト表示 (チェック時) / アイコン表示の切替
+
 // 通常色/強調色 (チェック状態) の2枚のピクスマップを持つ QIcon を作る。
 // QIcon::Normal/Off = normalColor、QIcon::Normal/On = activeColor。
 QIcon lineIcon(const IconSpec &spec, const QColor &normalColor, const QColor &activeColor);

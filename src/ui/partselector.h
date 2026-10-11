@@ -13,6 +13,7 @@ class QLineEdit;
 class QListView;
 class QLabel;
 class QPushButton;
+class QToolButton;
 class QWidget;
 
 enum class PartSelectorMode {
@@ -95,6 +96,8 @@ private:
 	QComboBox *m_libraryCombo;
 	QComboBox *m_categoryCombo;
 	QLineEdit *m_searchEdit;
+	// アイコン表示 (サムネイルのグリッド) とリスト表示 (小アイコン+名前を1行ずつ) の切替。
+	QToolButton *m_listModeButton;
 	QListView *m_listView;
 	PartListModel *m_model;
 
@@ -108,5 +111,7 @@ private:
 	void rebuildCategoryCombo();
 	void updateFilterVisibility();
 	void applyFilter();
+	void applyListMode(bool list);
+	void refreshIcons();
 	PartSelectorMode currentMode() const;
 };

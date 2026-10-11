@@ -7,14 +7,25 @@
 #include <QListView>
 #include <QPixmap>
 #include <QPushButton>
+#include <QSettings>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <algorithm>
 
 #include "../model/librarymanager.h"
 #include "helphint.h"
+#include "icons.h"
+#include "theme.h"
 
 namespace {
+// サムネイルは大きめに作っておき、表示側 (QListView::setIconSize) で縮める。
 constexpr int kIconSize = 48;
+// アイコン表示: 1マスを小さめに固定し、名前は1行に省略して並べる (以前は 48px + 折り返しで、
+// サイドバー幅では3列・1マスが縦に長く、一覧できる数が少なかった)。
+constexpr int kGridIconSize = 32;
+const QSize kGridCellSize(58, 54);
+// リスト表示: 小アイコン+名前を1行ずつ。
+constexpr int kListIconSize = 20;
 }
 
 // ---------------------------------------------------------------- PartListModel
@@ -123,27 +134,30 @@ PartSelector::PartSelector(QWidget *parent) : QWidget(parent) {
 	m_modeCombo->addItem(QStringLiteral("ライブラリ別"), static_cast<int>(PartSelectorMode::ByLibrary));
 	m_modeCombo->addItem(QStringLiteral("カテゴリ別"), static_cast<int>(PartSelectorMode::ByCategory));
 	m_modeCombo->addItem(QStringLiteral("全部品"), static_cast<int>(PartSelectorMode::All));
-	helphint::attach(m_modeCombo, QStringLiteral("部品一覧の絞り込み方法を選びます。"));
+	m_modeCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+	helphint::attach(m_modeCombo, QStringLiteral("一覧の分け方"));
 
 	m_libraryCombo = new QComboBox(this);
-	helphint::attach(m_libraryCombo, QStringLiteral("表示するライブラリを選びます。"));
+	m_libraryCombo->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+	helphint::attach(m_libraryCombo, QStringLiteral("ライブラリ"));
 	m_categoryCombo = new QComboBox(this);
-	helphint::attach(m_categoryCombo, QStringLiteral("表示するカテゴリを選びます。"));
+	helphint::attach(m_categoryCombo, QStringLiteral("カテゴリ"));
 
 	m_searchEdit = new QLineEdit(this);
 	m_searchEdit->setPlaceholderText(QStringLiteral("部品を検索..."));
 	m_searchEdit->setClearButtonEnabled(true);
-	helphint::attach(m_searchEdit, QStringLiteral("部品名・キーワードで絞り込みます。"));
+	helphint::attach(m_searchEdit, QStringLiteral("部品名・キーワードで絞り込み"));
+
+	m_listModeButton = new QToolButton(this);
+	m_listModeButton->setCheckable(true);
+	m_listModeButton->setAutoRaise(true);
+	m_listModeButton->setToolTip(tr("リスト表示"));
 
 	m_listView = new QListView(this);
-	m_listView->setViewMode(QListView::IconMode);
-	m_listView->setIconSize(QSize(kIconSize, kIconSize));
 	m_listView->setResizeMode(QListView::Adjust);
 	m_listView->setMovement(QListView::Static);
-	m_listView->setSpacing(6);
-	m_listView->setWordWrap(true);
 	m_listView->setSelectionMode(QAbstractItemView::SingleSelection);
-	m_listView->setUniformItemSizes(false);
+	m_listView->setTextElideMode(Qt::ElideRight);
 
 	m_model = new PartListModel(this);
 	m_listView->setModel(m_model);
@@ -166,14 +180,34 @@ PartSelector::PartSelector(QWidget *parent) : QWidget(parent) {
 					   "QLabel { color: palette(highlighted-text); }"));
 	m_pendingBar->setVisible(false);
 
+	// 分け方とライブラリは1行に並べ、検索欄の横に表示切替を置く (縦方向を一覧に回すため)。
+	auto *filterRow = new QHBoxLayout();
+	filterRow->setSpacing(2);
+	filterRow->addWidget(m_modeCombo);
+	filterRow->addWidget(m_libraryCombo, /*stretch=*/1);
+	auto *searchRow = new QHBoxLayout();
+	searchRow->setSpacing(2);
+	searchRow->addWidget(m_searchEdit, /*stretch=*/1);
+	searchRow->addWidget(m_listModeButton);
+
 	auto *layout = new QVBoxLayout(this);
-	layout->setContentsMargins(4, 4, 4, 4);
-	layout->addWidget(m_modeCombo);
-	layout->addWidget(m_libraryCombo);
+	layout->setContentsMargins(2, 2, 2, 2);
+	layout->setSpacing(2);
+	layout->addLayout(filterRow);
 	layout->addWidget(m_categoryCombo);
-	layout->addWidget(m_searchEdit);
+	layout->addLayout(searchRow);
 	layout->addWidget(m_pendingBar);
 	layout->addWidget(m_listView, /*stretch=*/1);
+
+	const bool listMode = QSettings().value(QStringLiteral("partSelector/listMode"), false).toBool();
+	m_listModeButton->setChecked(listMode);
+	applyListMode(listMode);
+	connect(m_listModeButton, &QToolButton::toggled, this, [this](bool list) {
+		applyListMode(list);
+		QSettings().setValue(QStringLiteral("partSelector/listMode"), list);
+	});
+	refreshIcons();
+	connect(&Theme::instance(), &Theme::changed, this, &PartSelector::refreshIcons);
 
 	connect(m_modeCombo, &QComboBox::currentIndexChanged, this, &PartSelector::onModeChanged);
 	connect(m_libraryCombo, &QComboBox::currentIndexChanged, this, &PartSelector::onLibraryComboChanged);
@@ -199,6 +233,29 @@ void PartSelector::setLibraryManager(LibraryManager *manager) {
 	rebuildLibraryCombo();
 	updateFilterVisibility();
 	applyFilter();
+}
+
+void PartSelector::applyListMode(bool list) {
+	if (list) {
+		m_listView->setViewMode(QListView::ListMode);
+		m_listView->setIconSize(QSize(kListIconSize, kListIconSize));
+		m_listView->setGridSize(QSize());
+		m_listView->setSpacing(0);
+		m_listView->setWordWrap(false);
+		m_listView->setUniformItemSizes(true);
+	} else {
+		m_listView->setViewMode(QListView::IconMode);
+		m_listView->setIconSize(QSize(kGridIconSize, kGridIconSize));
+		m_listView->setGridSize(kGridCellSize);
+		m_listView->setSpacing(0);
+		m_listView->setWordWrap(false);
+		m_listView->setUniformItemSizes(true);
+	}
+}
+
+void PartSelector::refreshIcons() {
+	m_listModeButton->setIcon(
+		icons::lineIcon(icons::ListView, Theme::instance().iconNormalColor(), Theme::instance().iconActiveColor()));
 }
 
 PartSelectorMode PartSelector::currentMode() const {
