@@ -25,7 +25,8 @@ void Theme::init() {
 	// Noto Sans JP (可変フォント、Regular〜Bold を1ファイルでカバー) を埋め込みリソースから
 	// 登録する。失敗しても致命的ではない (Qt の既定フォールバックフォントで表示されるだけ)。
 	QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/NotoSansJP.ttf"));
-	QFont font(QStringLiteral("Noto Sans JP"), 10);
+	// 9pt: 使い込む前提の道具なので、GIMP や CAD と同程度の情報密度に合わせる (以前は 10pt)。
+	QFont font(QStringLiteral("Noto Sans JP"), 9);
 	qApp->setFont(font);
 
 	QStyleHints *hints = QGuiApplication::styleHints();

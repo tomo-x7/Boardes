@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QGraphicsItem>
+#include <QPen>
 #include <memory>
 
 #include "../../model/wire.h"
@@ -35,6 +36,16 @@ public:
 	}
 
 	static QColor colorForLayer(WireLayer layer);
+
+	// 実際に描く線幅 (モデル単位)。基本はモデル単位の太さ (裸線 2.5 = 約0.64mm、被覆配線 4.0 =
+	// 約1.0mm) で、縮小表示しても画面上で細くなりすぎないよう最小の画面ピクセル幅を保証する。
+	// px は「画面1ピクセルに相当するモデル単位」(1 / 表示倍率)。入力中のプレビュー
+	// (OverlayItem) も同じ幅で描き、確定後と太さが変わらないようにする。
+	static qreal paintWidth(WireLayer layer, qreal px);
+	// 層ごとの色・線種・paintWidth() をまとめたペン。
+	static QPen penForLayer(WireLayer layer, qreal px);
+	// 描画が boundingRect() からはみ出さないよう、線幅 (縁取りを含む) の半分をこれ以下に抑える。
+	static constexpr qreal kBoundsMargin = 6.0;
 
 private:
 	std::shared_ptr<const Wire> m_wire;

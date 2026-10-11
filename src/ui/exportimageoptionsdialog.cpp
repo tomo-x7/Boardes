@@ -18,7 +18,7 @@ ExportImageOptionsDialog::ExportImageOptionsDialog(QWidget *parent) : QDialog(pa
 	m_backRadio = new QRadioButton(tr("裏面"), targetGroup);
 	m_bothRadio = new QRadioButton(tr("表裏を並べる"), targetGroup);
 	m_frontRadio->setChecked(true);
-	helphint::attach(m_bothRadio, tr("表面と裏面を横に並べた1枚の画像として書き出します。"));
+	helphint::attach(m_bothRadio, tr("表裏を横に並べた1枚の画像"));
 	auto *targetLayout = new QVBoxLayout(targetGroup);
 	targetLayout->addWidget(m_frontRadio);
 	targetLayout->addWidget(m_backRadio);
@@ -28,12 +28,10 @@ ExportImageOptionsDialog::ExportImageOptionsDialog(QWidget *parent) : QDialog(pa
 	for (int s : {1, 2, 3, 4, 6, 8}) {
 		m_scaleCombo->addItem(tr("%1倍").arg(s), s);
 	}
-	helphint::attach(m_scaleCombo,
-					 tr("書き出す画像の拡大率です。1単位=1画素が基準の等倍に対する倍率です。"));
+	helphint::attach(m_scaleCombo, tr("等倍 = 1単位 (0.254mm) あたり1画素"));
 
 	m_transparentCheck = new QCheckBox(tr("背景を透過する"), this);
-	helphint::attach(m_transparentCheck,
-					 tr("ON にすると基板の外側 (背景) を透過にします。OFF なら白で塗りつぶします。"));
+	helphint::attach(m_transparentCheck, tr("基板の外側を透過 (OFF なら白)"));
 
 	auto *form = new QFormLayout();
 	form->addRow(tr("拡大率:"), m_scaleCombo);

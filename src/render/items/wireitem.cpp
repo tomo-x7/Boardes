@@ -43,17 +43,71 @@ QPainterPath WireItem::path() const {
 }
 
 void WireItem::recomputeBounds() {
-	m_bounds = path().boundingRect().adjusted(-2, -2, 2, 2);
+	m_bounds = path().boundingRect().adjusted(-kBoundsMargin, -kBoundsMargin, kBoundsMargin, kBoundsMargin);
 }
 
 QRectF WireItem::boundingRect() const {
 	return m_bounds;
 }
 
+namespace {
+// 層ごとの線幅 (モデル単位) と、画面上で保証する最小幅 (px)。
+qreal nominalWidth(WireLayer layer) {
+	switch (layer) {
+	case WireLayer::FrontBare:
+	case WireLayer::BackBare:
+		return 2.5;  // 約0.64mm (すずめっき線相当)
+	case WireLayer::FrontInsulated:
+	case WireLayer::BackInsulated:
+		return 4.0;  // 約1.0mm (被覆線の外径相当)
+	case WireLayer::Outline:
+	default:
+		return 0.6;
+	}
+}
+
+qreal minScreenWidth(WireLayer layer) {
+	switch (layer) {
+	case WireLayer::FrontBare:
+	case WireLayer::BackBare:
+		return 2.0;
+	case WireLayer::FrontInsulated:
+	case WireLayer::BackInsulated:
+		return 3.0;
+	case WireLayer::Outline:
+	default:
+		return 1.0;
+	}
+}
+
+// 縁取りを含めた線幅を boundingRect() の余白に収める。
+qreal clampToBounds(qreal width) {
+	return qMin(width, 2.0 * WireItem::kBoundsMargin);
+}
+}  // namespace
+
+qreal WireItem::paintWidth(WireLayer layer, qreal px) {
+	return clampToBounds(qMax(nominalWidth(layer), minScreenWidth(layer) * px));
+}
+
+QPen WireItem::penForLayer(WireLayer layer, qreal px) {
+	QPen pen(colorForLayer(layer));
+	pen.setWidthF(paintWidth(layer, px));
+	pen.setCapStyle(Qt::RoundCap);
+	pen.setJoinStyle(Qt::RoundJoin);
+	if (isInsulated(layer)) {
+		// 丸い線端だと太い破線の隙間が埋まってしまうので、被覆配線は平らな線端にする。
+		// 破線のパターンは線幅の倍数なので、太さに関わらず「線幅2つ分の線・1つ分の隙間」。
+		pen.setCapStyle(Qt::FlatCap);
+		pen.setDashPattern({2.0, 1.0});
+	}
+	return pen;
+}
+
 QPainterPath WireItem::shape() const {
-	// クリック判定を線の見た目の太さ相当まで広げる (細い1px線だと選択しづらいため)。
+	// クリック判定は線の見た目より少しだけ広げる (ズームに依らないモデル単位)。
 	QPainterPathStroker stroker;
-	stroker.setWidth(2.0);
+	stroker.setWidth(qMax(3.0, nominalWidth(m_wire ? m_wire->layer : WireLayer::FrontBare) + 1.0));
 	return stroker.createStroke(path());
 }
 
@@ -61,49 +115,41 @@ void WireItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidge
 	if (!m_wire) {
 		return;
 	}
+	const qreal px = 1.0 / qMax(0.001, qAbs(painter->transform().m11()));
+	QPen pen = penForLayer(m_wire->layer, px);
+	const qreal width = pen.widthF();
+
 	if (m_netHighlighted) {
 		// 選択ハイライトとは別枠の、同一ネット強調用の縁取りを下に敷く。
 		QPen halo(QColor(0, 220, 220, 200));
-		halo.setWidthF(2.4);
+		halo.setWidthF(clampToBounds(width + qMax(1.4, 3.0 * px)));
 		halo.setCapStyle(Qt::RoundCap);
 		halo.setJoinStyle(Qt::RoundJoin);
 		painter->setPen(halo);
 		painter->drawPath(path());
 	}
-
-	const qreal px = 1.0 / qMax(0.001, qAbs(painter->transform().m11()));
 
 	if (isSelected()) {
 		// 黒縁 (下敷き) + 黄色破線。線の色そのものより優先して視認性を確保する
 		// (明るい基板・暗い基板どちらの上でも見えるようにするため)。
 		QPen halo(Qt::black);
-		halo.setWidthF(3.5 * px);
+		halo.setWidthF(clampToBounds(width + 3.0 * px));
 		halo.setCapStyle(Qt::RoundCap);
 		halo.setJoinStyle(Qt::RoundJoin);
 		painter->setPen(halo);
 		painter->drawPath(path());
-	}
 
-	QPen pen(colorForLayer(m_wire->layer));
-	pen.setWidthF(m_wire->layer == WireLayer::Outline ? 0.6 : 1.0);
-	pen.setCapStyle(Qt::RoundCap);
-	pen.setJoinStyle(Qt::RoundJoin);
-	if (isInsulated(m_wire->layer)) {
-		pen.setStyle(Qt::DashLine);
-	}
-	if (isSelected()) {
 		pen.setColor(Qt::yellow);
 		pen.setStyle(Qt::DashLine);
-		pen.setWidthF(1.6 * px);
 	}
 	painter->setPen(pen);
 	painter->drawPath(path());
 
-	if (isSelected() && m_wire) {
-		// 頂点にハンドル。
+	if (isSelected()) {
+		// 頂点にハンドル。太い線に埋もれないよう、線幅より少し大きくする。
 		painter->setPen(Qt::NoPen);
 		painter->setBrush(Qt::black);
-		const qreal hs = 3.5 * px;
+		const qreal hs = qMax(3.5 * px, width + 1.5 * px);
 		for (const QPoint &p : m_wire->points) {
 			painter->drawRect(QRectF(p.x() - hs / 2, p.y() - hs / 2, hs, hs));
 		}

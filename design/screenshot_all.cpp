@@ -32,6 +32,7 @@
 #include <QImage>
 #include <QLibraryInfo>
 #include <QLocale>
+#include <QMenu>
 #include <QPixmap>
 #include <QTabWidget>
 #include <QTest>
@@ -145,6 +146,24 @@ int main(int argc, char **argv) {
 		}
 		const QPixmap pm = w.grab();
 		pm.save(kOutDir + outputFileName(QStringLiteral("main-window-stats.png")));
+		w.close();
+	}
+
+	// --- 3b. 基板メニュー (ツールバー先頭の基板ボタンから開く。メニューバーの「基板」と同じ内容。
+	//         005-ui-density-board-menu.md で追加) ---
+	{
+		MainWindow w;
+		w.resize(1500, 950);
+		w.show();
+		QTest::qWaitForWindowExposed(&w);
+		if (QAction *boardButton = w.actionRegistry().action(QStringLiteral("toolbar.tools.board"))) {
+			if (QMenu *menu = boardButton->menu()) {
+				menu->popup(w.mapToGlobal(QPoint(400, 60)));
+				QTest::qWait(50);
+				menu->grab().save(kOutDir + outputFileName(QStringLiteral("board-menu.png")));
+				menu->hide();
+			}
+		}
 		w.close();
 	}
 

@@ -64,10 +64,10 @@ const QVector<ToolbarLayout> &defaults() {
 		  QStringLiteral("toolbar.view.pinNumbers"), QStringLiteral("toolbar.view.labels"),
 		  QStringLiteral("toolbar.view.pinMarkers"), QStringLiteral("toolbar.view.pinMarkerColor")}},
 		{QStringLiteral("tools"), QObject::tr("ツール"), true, true, Qt::ToolButtonIconOnly,
-		 {QStringLiteral("toolbar.tools.select"), QStringLiteral("-"), QStringLiteral("toolbar.tools.wireBare"),
-		  QStringLiteral("toolbar.tools.wireInsulated"), QStringLiteral("toolbar.tools.wireOutline"),
-		  QStringLiteral("-"), QStringLiteral("toolbar.tools.draft"), QStringLiteral("-"),
-		  QStringLiteral("widget:snapGranularity")}},
+		 {QStringLiteral("toolbar.tools.board"), QStringLiteral("-"), QStringLiteral("toolbar.tools.select"),
+		  QStringLiteral("-"), QStringLiteral("toolbar.tools.wireBare"), QStringLiteral("toolbar.tools.wireInsulated"),
+		  QStringLiteral("toolbar.tools.wireOutline"), QStringLiteral("-"), QStringLiteral("toolbar.tools.draft"),
+		  QStringLiteral("-"), QStringLiteral("widget:snapGranularity")}},
 	};
 	return layouts;
 }

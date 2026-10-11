@@ -8,11 +8,13 @@
 #include <QCloseEvent>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QCursor>
 #include <QDir>
 #include <QDockWidget>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QKeySequence>
 #include <QLabel>
@@ -26,6 +28,7 @@
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <functional>
@@ -40,6 +43,7 @@
 #include "../render/items/wireitem.h"
 #include "about.h"
 #include "boardeditordialog.h"
+#include "boardmenu.h"
 #include "drcpanel.h"
 #include "exportimageoptionsdialog.h"
 #include "exportpackagedialog.h"
@@ -96,6 +100,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 	m_backView->setKeymap(&m_keymap);
 	setupSidePanelDock();
 	setupClearDraftAction();
+	setupBoardMenu();
 	setDocument(std::make_unique<Document>());
 
 	ToolContext ctx;
@@ -119,6 +124,18 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 	auto *selectionSummaryLabel = new QLabel(this);
 	ui->statusbar->addPermanentWidget(selectionSummaryLabel);
 	connect(m_toolManager.get(), &ToolManager::selectionSummaryChanged, selectionSummaryLabel, &QLabel::setText);
+	// カーソル位置 (mm)。CAD と同じく、どこを指しているかを常に数値で読めるようにする。
+	// 桁数で幅が変わってステータスバーが揺れないよう、想定最大桁の幅を確保しておく。
+	m_cursorPosLabel = new QLabel(this);
+	m_cursorPosLabel->setProperty("mono", true);
+	m_cursorPosLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+	m_cursorPosLabel->setMinimumWidth(
+		QFontMetrics(Theme::monoFont()).horizontalAdvance(QStringLiteral("X -000.00  Y -000.00 mm")) + 8);
+	ui->statusbar->addPermanentWidget(m_cursorPosLabel);
+	for (BoardView *view : {m_frontView, m_backView}) {
+		connect(view, &BoardView::cursorModelPosChanged, this, &MainWindow::onCursorModelPosChanged);
+		connect(view, &BoardView::cursorLeft, m_cursorPosLabel, &QLabel::clear);
+	}
 
 	setupViewMenuAndToolbar();
 	setupToolsToolbar();
@@ -282,7 +299,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 	QAction *zoomResetAction = toolbar->addAction(QStringLiteral("100%"));
 	// 数値そのものが状態表示 (現在倍率) を兼ねるように見えるが、実際は固定のリセット
 	// アクションなので、ホバーで区別が付くようにツールチップを明示する (改善提案2 #8)。
-	zoomResetAction->setToolTip(tr("ズームを100%にリセットします"));
+	zoomResetAction->setToolTip(tr("倍率 100%"));
 	connect(zoomResetAction, &QAction::triggered, this, [this] {
 		m_frontView->resetZoom();
 		m_backView->resetZoom();
@@ -305,9 +322,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 	QAction *linkViewsAction = toolbar->addAction(QStringLiteral("表裏のビューを連動"));
 	m_actionRegistry.add(QStringLiteral("toolbar.view.linkViews"), linkViewsAction);
 	linkViewsAction->setCheckable(true);
-	linkViewsAction->setToolTip(
-		QStringLiteral("ON にすると、表裏どちらかのビューをスクロール/ズームしたとき、"
-					   "もう片方も同じ位置・倍率に追従します。"));
+	linkViewsAction->setToolTip(QStringLiteral("表裏ビューのスクロール・倍率を連動"));
 	{
 		const bool linkViews = QSettings().value(QStringLiteral("view/linkViews"), false).toBool();
 		linkViewsAction->setChecked(linkViews);
@@ -319,9 +334,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 	});
 	ui->menuView->addAction(linkViewsAction);
 
-	toolbar->addSeparator();
-
-	// 裏面ビューの見え方 (排他3択)。
+	// 裏面ビューの見え方 (排他3択)。メニューだけに置き、ツールバーには出さない。
 	auto *backViewModeGroup = new QActionGroup(this);
 	backViewModeGroup->setExclusive(true);
 	auto *backViewMenu = new QMenu(QStringLiteral("裏面の見え方"), this);
@@ -383,7 +396,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 				m_frontScene->setLayerVisible(WireLayer::FrontBare, v);
 				m_backScene->setLayerVisible(WireLayer::FrontBare, v);
 			},
-			QStringLiteral("表面の裸線 (被覆なし配線) の表示/非表示を切り替えます。"), QStringLiteral("front")));
+			QStringLiteral("表面配線の表示"), QStringLiteral("front")));
 	m_actionRegistry.add(
 		QStringLiteral("toolbar.view.wireBackBare"),
 		addToggle(
@@ -392,7 +405,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 				m_frontScene->setLayerVisible(WireLayer::BackBare, v);
 				m_backScene->setLayerVisible(WireLayer::BackBare, v);
 			},
-			QStringLiteral("裏面の裸線 (被覆なし配線) の表示/非表示を切り替えます。"), QStringLiteral("back")));
+			QStringLiteral("裏面配線の表示"), QStringLiteral("back")));
 	m_actionRegistry.add(
 		QStringLiteral("toolbar.view.wireFrontInsulated"),
 		addToggle(
@@ -401,7 +414,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 				m_frontScene->setLayerVisible(WireLayer::FrontInsulated, v);
 				m_backScene->setLayerVisible(WireLayer::FrontInsulated, v);
 			},
-			QStringLiteral("表面の被覆配線の表示/非表示を切り替えます。"), QStringLiteral("front")));
+			QStringLiteral("表面被覆配線の表示"), QStringLiteral("front")));
 	m_actionRegistry.add(
 		QStringLiteral("toolbar.view.wireBackInsulated"),
 		addToggle(
@@ -410,7 +423,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 				m_frontScene->setLayerVisible(WireLayer::BackInsulated, v);
 				m_backScene->setLayerVisible(WireLayer::BackInsulated, v);
 			},
-			QStringLiteral("裏面の被覆配線の表示/非表示を切り替えます。"), QStringLiteral("back")));
+			QStringLiteral("裏面被覆配線の表示"), QStringLiteral("back")));
 	m_actionRegistry.add(
 		QStringLiteral("toolbar.view.outline"),
 		addToggle(
@@ -419,7 +432,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 				m_frontScene->setLayerVisible(WireLayer::Outline, v);
 				m_backScene->setLayerVisible(WireLayer::Outline, v);
 			},
-			QStringLiteral("基板外形線の表示/非表示を切り替えます。")));
+			QStringLiteral("外形線の表示")));
 	m_actionRegistry.add(
 		QStringLiteral("toolbar.view.partOutline"),
 		addToggle(
@@ -428,7 +441,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 				m_frontScene->setForcePartOutline(v);
 				m_backScene->setForcePartOutline(v);
 			},
-			QStringLiteral("ON にすると、自面の部品もアートワークではなく輪郭矩形+ピンパッドだけで表示します。")));
+			QStringLiteral("部品をアウトラインで表示 (自面も)")));
 	m_actionRegistry.add(QStringLiteral("toolbar.view.pinNumbers"),
 						 addToggle(
 							 QStringLiteral("ピン番号表示"), false,
@@ -436,7 +449,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 								 m_frontScene->setShowPinNumbers(v);
 								 m_backScene->setShowPinNumbers(v);
 							 },
-							 QStringLiteral("部品のピン番号を表示します。")));
+							 QStringLiteral("ピン番号の表示")));
 	m_actionRegistry.add(QStringLiteral("toolbar.view.labels"),
 						 addToggle(
 							 QStringLiteral("部品番号/値表示"), true,
@@ -444,7 +457,7 @@ void MainWindow::setupViewMenuAndToolbar() {
 								 m_frontScene->setShowLabels(v);
 								 m_backScene->setShowLabels(v);
 							 },
-							 QStringLiteral("部品の refDes (No) と値のラベル表示を切り替えます。")));
+							 QStringLiteral("部品番号 (refDes)・値の表示")));
 
 	// 接点 (ピン) マーカー。PasS 部品は赤いマーカー画素をそのまま残しているので、ON にすると
 	// その上にさらに丸が重なる。独自部品でも同じ位置にピンがあれば表示できる。
@@ -466,10 +479,10 @@ void MainWindow::setupViewMenuAndToolbar() {
 				m_backScene->setPinMarkers(v, c.isValid() ? c : QColor(255, 0, 0), 3.0);
 				QSettings().setValue(QStringLiteral("view/pinMarkerVisible"), v);
 			},
-			QStringLiteral("PasS 部品の赤マーカー等、ピンの位置に丸を重ねて表示します。独自部品でも表示できます。")));
+			QStringLiteral("接点マーカーの表示")));
 	QAction *pinMarkerColorAction = toolbar->addAction(QStringLiteral("接点マーカーの色..."));
 	pinMarkerColorAction->setIcon(icons::colorSwatch(pinMarkerColor));
-	pinMarkerColorAction->setToolTip(QStringLiteral("接点マーカーの色を選びます。"));
+	pinMarkerColorAction->setToolTip(QStringLiteral("接点マーカーの色"));
 	connect(pinMarkerColorAction, &QAction::triggered, this, [this, pinMarkerColorAction] {
 		const QColor cur =
 			QSettings().value(QStringLiteral("view/pinMarkerColor"), QColor(255, 0, 0)).value<QColor>();
@@ -529,15 +542,11 @@ void MainWindow::setupViewMenuAndToolbar() {
 	ui->menuView->addSeparator();
 	ui->menuView->addAction(toolbar->toggleViewAction());
 	QAction *customizeShortcutsAction = ui->menuView->addAction(QStringLiteral("操作のカスタマイズ..."));
-	customizeShortcutsAction->setToolTip(
-		QStringLiteral("ショートカットキーやマウス操作の割り当てを変更します。左手デバイス等の独自キーにも対応します。"));
 	connect(customizeShortcutsAction, &QAction::triggered, this, [this] {
 		KeymapDialog dlg(&m_keymap, this);
 		dlg.exec();
 	});
 	QAction *customizeToolbarsAction = ui->menuView->addAction(QStringLiteral("ツールバーのカスタマイズ..."));
-	customizeToolbarsAction->setToolTip(
-		QStringLiteral("ツールバーの項目・並び順・表示スタイルを変更したり、独自のツールバーを作成したりします。"));
 	connect(customizeToolbarsAction, &QAction::triggered, this, [this] {
 		ToolbarCustomizeDialog dlg(&m_actionRegistry, this);
 		connect(&dlg, &ToolbarCustomizeDialog::layoutsChanged, this, &MainWindow::rebuildToolbars);
@@ -546,10 +555,19 @@ void MainWindow::setupViewMenuAndToolbar() {
 }
 
 void MainWindow::setupToolsToolbar() {
+	// 表示ツールバーと同じ行に並べる (以前は別行にしていたが、縦方向の領域をキャンバスに回すため)。
 	auto *toolbar = addToolBar(QStringLiteral("ツール"));
 	toolbar->setObjectName(QStringLiteral("toolsToolBar"));
-	insertToolBarBreak(toolbar);  // 表示ツールバーとは別行に
 	m_toolbars.insert(QStringLiteral("tools"), toolbar);
+
+	// 先頭に現在の基板。押すと基板メニュー (ライブラリの基板一覧・編集など) が開く。
+	toolbar->addAction(m_boardAction);
+	if (auto *button = qobject_cast<QToolButton *>(toolbar->widgetForAction(m_boardAction))) {
+		button->setPopupMode(QToolButton::InstantPopup);
+		button->setObjectName(QStringLiteral("boardButton"));  // QSS: メニューの矢印の分だけ右に余白
+	}
+	m_actionRegistry.add(QStringLiteral("toolbar.tools.board"), m_boardAction);
+	toolbar->addSeparator();
 
 	m_toolActionGroup = new QActionGroup(this);
 	m_toolActionGroup->setExclusive(true);
@@ -596,8 +614,7 @@ void MainWindow::setupToolsToolbar() {
 	connect(snapCombo, &QComboBox::currentIndexChanged, this, [this, snapCombo](int) {
 		m_snapEngine.setGranularity(static_cast<units::Granularity>(snapCombo->currentData().toInt()));
 	});
-	helphint::attach(snapCombo, QStringLiteral("配線を引くときのスナップ粒度です。フル=2.54mmグリッド、"
-											  "ハーフ=1.27mm、フリー=任意の位置に置けます。"));
+	helphint::attach(snapCombo, QStringLiteral("配線のスナップ間隔"));
 	toolbar->addWidget(snapCombo);
 
 	ui->menuView->addAction(toolbar->toggleViewAction());
@@ -610,7 +627,7 @@ void MainWindow::setupToolsToolbar() {
 
 void MainWindow::setupClearDraftAction() {
 	m_clearDraftAction = new QAction(tr("下書きを消去"), this);
-	m_clearDraftAction->setToolTip(tr("表面・裏面の下書きの線をすべて消します。元に戻せません。"));
+	m_clearDraftAction->setToolTip(tr("表裏の下書きをすべて消去 (元に戻せない)"));
 	connect(m_clearDraftAction, &QAction::triggered, this, &MainWindow::onClearDraftTriggered);
 	connect(m_frontScene, &BoardScene::draftChanged, this, &MainWindow::updateClearDraftActionEnabled);
 	connect(m_backScene, &BoardScene::draftChanged, this, &MainWindow::updateClearDraftActionEnabled);
@@ -718,6 +735,8 @@ void MainWindow::rebuildToolbars() {
 		}
 		toolbar->setWindowTitle(layout.title);
 		toolbar->setToolButtonStyle(layout.style);
+		// アイコンは 14px で描いてある (icons.cpp)。既定の 24px 枠だと周りが空くだけなので詰める。
+		toolbar->setIconSize(QSize(16, 16));
 		toolbar->setVisible(layout.visible);
 		if (!layout.builtin) {
 			// builtin ではないツールバーは特別なウィジェットを含まないので、
@@ -798,8 +817,11 @@ void MainWindow::setDocument(std::unique_ptr<Document> doc, const QString &fileP
 				[this](int) { m_objectListPanel->refresh(); });
 		m_objectListPanel->refresh();
 	}
+	// 基板の変更 (Undo/Redo を含む) をツールバーの基板ボタンに反映する。
+	connect(m_document->undoStack(), &QUndoStack::indexChanged, this, [this](int) { updateBoardUi(); });
 
 	syncAllScenes();
+	updateBoardUi();
 	updateWindowTitle();
 	fitViewsDeferred();
 }
@@ -830,6 +852,104 @@ void MainWindow::fitViewsDeferred() {
 		m_frontView->fitBoardToWindow();
 		m_backView->fitBoardToWindow();
 	});
+}
+
+// ---------------------------------------------------------------- 基板
+
+void MainWindow::setupBoardMenu() {
+	// メニューバーでは「表示」と「ライブラリ」の間に置く。
+	m_boardMenu = new BoardMenu(&m_libraryManager, this);
+	ui->menubar->insertMenu(ui->menuLibrary->menuAction(), m_boardMenu);
+	// ツールバーの基板ボタン。文字列が現在の基板名を兼ねる (updateBoardUi())。中身は同じだが別の
+	// BoardMenu を持たせる。Qt 6 の QAction::setMenu() はメニューの menuAction() を差し替えるので、
+	// メニューバーのメニューを共有すると、そちらのタイトルまでボタンの文字列になってしまうため。
+	m_boardButtonMenu = new BoardMenu(&m_libraryManager, this);
+	m_boardAction = new QAction(this);
+	m_boardAction->setMenu(m_boardButtonMenu);
+	// ユーザーが作ったツールバーに置くと分割ボタンになり、本体を押すと triggered だけが来る。
+	// そのときもメニューを開く (既定のツールバーでは InstantPopup なので triggered は来ない)。
+	connect(m_boardAction, &QAction::triggered, this, [this] { m_boardButtonMenu->popup(QCursor::pos()); });
+
+	for (BoardMenu *menu : {m_boardMenu, m_boardButtonMenu}) {
+		connect(menu, &BoardMenu::boardChosen, this, [this](const BoardSpec &board) { pushBoardAndFit(board); });
+		connect(menu, &BoardMenu::editCurrentRequested, this, &MainWindow::onEditCurrentBoardTriggered);
+		connect(menu, &BoardMenu::newBoardRequested, this, &MainWindow::onNewBoardTriggered);
+		connect(menu, &BoardMenu::registerCurrentRequested, this, &MainWindow::onRegisterCurrentBoardTriggered);
+	}
+}
+
+void MainWindow::updateBoardUi() {
+	if (!m_boardMenu || !m_document) {
+		return;
+	}
+	const BoardSpec &board = m_document->board;
+	m_boardMenu->setCurrentBoard(&board);
+	m_boardButtonMenu->setCurrentBoard(&board);
+	m_boardAction->setText(BoardMenu::buttonText(&board));
+	if (BoardMenu::hasBoard(&board)) {
+		// 名前に %1 などが含まれていても置換し直されないよう、文字列はまとめて1回で埋め込む。
+		const QString name = board.name.isEmpty() ? board.id : board.name;
+		const QString holes = QStringLiteral("%1×%2").arg(board.cols).arg(board.rows);
+		const QString pitch = QString::number(units::toMm(board.pitch), 'f', 2);
+		const QString sides = board.doubleSided ? tr("両面") : tr("片面");
+		const QString size = QStringLiteral("%1×%2")
+								 .arg(units::toMm(board.size.width()), 0, 'f', 1)
+								 .arg(units::toMm(board.size.height()), 0, 'f', 1);
+		m_boardAction->setToolTip(tr("%1 — %2穴 / ピッチ %3mm / %4 / %5mm").arg(name, holes, pitch, sides, size));
+	} else {
+		m_boardAction->setToolTip(tr("基板の選択"));
+	}
+	// 基板が未設定のあいだビューに出している案内 (BoardView::drawForeground) を消す/出す。
+	m_frontView->viewport()->update();
+	m_backView->viewport()->update();
+}
+
+void MainWindow::onEditCurrentBoardTriggered() {
+	const BoardSpec current = m_document->board;
+	BoardEditorDialog dialog(this);
+	dialog.setBoard(current);
+	if (dialog.exec() != QDialog::Accepted) {
+		return;
+	}
+	BoardSpec updated = dialog.board();
+	// ダイアログが扱わない取込専用の項目 (変形穴配置・ランドカット・取付穴) は引き継ぐ。
+	// 幅マーカー (外形) はサイズが変わらないときだけ引き継ぐ。ダイアログを開いて OK を押しただけで
+	// PasS 取込基板の外形などが黙って消えないようにするため。
+	updated.absentHoles = current.absentHoles;
+	updated.stripBreaks = current.stripBreaks;
+	updated.mountingHoles = current.mountingHoles;
+	if (updated.size == current.size) {
+		updated.outlineRect = current.outlineRect;
+	}
+	pushBoardAndFit(updated);
+}
+
+void MainWindow::onNewBoardTriggered() {
+	BoardEditorDialog dialog(this);
+	if (dialog.exec() != QDialog::Accepted) {
+		return;
+	}
+	pushBoardAndFit(dialog.board());
+}
+
+void MainWindow::onRegisterCurrentBoardTriggered() {
+	BoardSpec board = m_document->board;
+	if (!BoardMenu::hasBoard(&board)) {
+		return;
+	}
+	board.id = m_libraryManager.uniqueBoardIdForMyLibrary(board.id.isEmpty() ? QStringLiteral("board") : board.id);
+	const auto result = m_libraryManager.addBoardToMyLibrary(board);
+	if (!result.ok) {
+		QMessageBox::warning(this, tr("登録できませんでした"), result.error);
+		return;
+	}
+	ui->statusbar->showMessage(tr("マイライブラリに登録: %1").arg(board.name.isEmpty() ? board.id : board.name), 5000);
+}
+
+void MainWindow::onCursorModelPosChanged(QPointF modelPos) {
+	m_cursorPosLabel->setText(QStringLiteral("X %1  Y %2 mm")
+								  .arg(modelPos.x() * units::MmPerUnit, 0, 'f', 2)
+								  .arg(modelPos.y() * units::MmPerUnit, 0, 'f', 2));
 }
 
 void MainWindow::onAboutTriggered() {
