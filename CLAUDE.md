@@ -41,5 +41,4 @@ BOARDES_PASS_PARTS_DIR=/home/tomo/Documents/pass/parts ctest --test-dir build --
   デザイン案は、ユーザーの明確な指示がない限りコードに取り込まない。
 - `design/OVERVIEW.md` はアプリの基本的な説明。**基本的な記述は書き換えず**、UI を変えたときは
   `design/NNN-<内容>.md`（連番）を新規作成して変更点をそこに書き、OVERVIEW.md にはその
-  ファイルへの参照を1行足すだけにする（履歴を残すため）。UI を変えたらスクリーンショットも
-  `design/screenshot_all.cpp` で取り直す。
+  ファイルへの参照を1行足すだけにする（履歴を残すため）。

@@ -44,9 +44,8 @@ public:
 	explicit MainWindow(QWidget *parent = nullptr);
 	~MainWindow();
 
-	// スクリーンショット採取ハーネス (design/screenshot_all.cpp) が、実際に構築された
-	// ツールバーと同じ ActionRegistry を使って ToolbarCustomizeDialog を単独表示するために
-	// 公開している。通常の操作では MainWindow 自身が内部でしか使わない。
+	// テストが、実際に構築されたツールバーのアクションをコマンド ID で引くために公開している。
+	// 通常の操作では MainWindow 自身が内部でしか使わない。
 	ActionRegistry &actionRegistry() {
 		return m_actionRegistry;
 	}

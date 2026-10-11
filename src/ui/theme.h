@@ -24,8 +24,7 @@ public:
 
 	bool isDark() const { return m_dark; }
 
-	// OS のテーマ判定を無視して強制的に切り替える。design/screenshot_all.cpp が
-	// ライト/ダーク両方のスクリーンショットを撮るためのもので、通常のアプリ実行では
+	// OS のテーマ判定を無視して強制的に切り替える。テスト用で、通常のアプリ実行では
 	// 使わない (init() が OS の設定に追従する)。
 	void forceTheme(bool dark) { apply(dark); }
 
