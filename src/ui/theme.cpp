@@ -5,9 +5,61 @@
 #include <QFile>
 #include <QFontDatabase>
 #include <QGuiApplication>
+#include <QPalette>
 #include <QPushButton>
+#include <QStyle>
 #include <QStyleHints>
 #include <QTextStream>
+
+namespace {
+
+// QSS (light.qss / dark.qss) と同じカラートークン。
+struct Tokens {
+	QColor surface0, surface1, surface2, surface3;
+	QColor textPrimary, textDisabled;
+	QColor link;
+};
+
+// QSS で文字色を指定していないところ (QLabel、一覧・表の項目、ツールチップ、palette(mid) を使う補足の
+// 文字など) はアプリのパレットの色で描かれる。パレットが OS のまま (ライト) だと、ダークテーマでは
+// 暗い文字が暗い背景に重なって読めない (OS がライトのとき、実行中に切り替えたとき、OS のテーマ判定と
+// パレットが食い違う環境など)。QSS と同じトークンでパレットも揃える。
+QPalette paletteFor(bool dark) {
+	const Tokens t = dark ? Tokens{QColor(0x1C, 0x1C, 0x1C), QColor(0x23, 0x23, 0x23), QColor(0x2C, 0x2C, 0x2C),
+								   QColor(0x38, 0x38, 0x38), QColor(0xF2, 0xF2, 0xF2), QColor(0x8C, 0x8C, 0x8C),
+								   QColor(0x6C, 0x9B, 0xD1)}
+						  : Tokens{QColor(0xFF, 0xFF, 0xFF), QColor(0xFA, 0xFA, 0xFA), QColor(0xF2, 0xF2, 0xF2),
+								   QColor(0xE4, 0xE4, 0xE4), QColor(0x1F, 0x1F, 0x1F), QColor(0x9A, 0x9A, 0x9A),
+								   QColor(0x34, 0x65, 0xA4)};
+	// 立体表現用の役割 (Light/Dark/Shadow 等) はスタイル既定のまま。部品エディタのキャンバスは Dark を
+	// 自前で上書きしている (parteditordialog.cpp)。
+	QPalette p = QApplication::style()->standardPalette();
+	const auto set = [&p](QPalette::ColorRole role, const QColor &color) { p.setColor(QPalette::All, role, color); };
+	set(QPalette::Window, t.surface1);
+	set(QPalette::WindowText, t.textPrimary);
+	set(QPalette::Base, t.surface0);
+	set(QPalette::AlternateBase, t.surface1);
+	set(QPalette::Text, t.textPrimary);
+	set(QPalette::Button, t.surface2);
+	set(QPalette::ButtonText, t.textPrimary);
+	set(QPalette::BrightText, t.textPrimary);
+	// 選択はグレーの濃淡だけで表す (QSS と同じ。ブランドカラーは無い)。部品セレクタの「配置中」バーもこれ。
+	set(QPalette::Highlight, t.surface3);
+	set(QPalette::HighlightedText, t.textPrimary);
+	set(QPalette::ToolTipBase, t.surface0);
+	set(QPalette::ToolTipText, t.textPrimary);
+	set(QPalette::PlaceholderText, t.textDisabled);
+	// palette(mid) は補足の文字 (基板エディタの導出サイズ、ライセンスの説明など) と枠線に使っている。
+	set(QPalette::Mid, t.textDisabled);
+	set(QPalette::Link, t.link);
+	set(QPalette::LinkVisited, t.link);
+	for (const auto role : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText}) {
+		p.setColor(QPalette::Disabled, role, t.textDisabled);
+	}
+	return p;
+}
+
+}  // namespace
 
 Theme &Theme::instance() {
 	static Theme theme;
@@ -37,6 +89,8 @@ void Theme::init() {
 
 void Theme::apply(bool dark) {
 	m_dark = dark;
+	// パレットを先に替える (スタイルシートの適用で各ウィジェットが再ポリッシュされるときに新しい色を使うよう)。
+	qApp->setPalette(paletteFor(dark));
 	QFile file(dark ? QStringLiteral(":/qss/dark.qss") : QStringLiteral(":/qss/light.qss"));
 	if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
 		qApp->setStyleSheet(QTextStream(&file).readAll());
